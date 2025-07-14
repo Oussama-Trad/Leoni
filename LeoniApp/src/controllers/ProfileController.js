@@ -86,7 +86,11 @@ class ProfileController {
   static async logout(navigation) {
     try {
       await AsyncStorage.removeItem('userToken');
-      navigation.replace('Login');
+      await AsyncStorage.removeItem('userData');
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Home' }],
+      });
     } catch (error) {
       console.error('Erreur lors de la déconnexion:', error);
       throw error;

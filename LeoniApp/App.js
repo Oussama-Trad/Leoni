@@ -7,7 +7,7 @@ import SplashScreen from './src/views/SplashScreen';
 import HomeScreen from './src/views/HomeScreen';
 import LoginScreen from './src/views/LoginScreen';
 import RegisterScreen from './src/views/RegisterScreen';
-import ProfileScreen from './src/views/ProfileScreen';
+import MainTabNavigator from './src/views/MainTabNavigator';
 
 const Stack = createStackNavigator();
 
@@ -59,19 +59,11 @@ export default function App() {
           }} 
         />
         <Stack.Screen 
-          name="Profile" 
-          component={ProfileScreen}
-          options={({ navigation }) => ({
-            title: 'Mon Profil',
-            headerLeft: () => (
-              <TouchableOpacity 
-                onPress={() => navigation.goBack()}
-                style={{ marginLeft: 10 }}
-              >
-                <Ionicons name="arrow-back" size={24} color="#fff" />
-              </TouchableOpacity>
-            ),
-          })}
+          name="MainTabs" 
+          component={MainTabNavigator}
+          options={{ 
+            headerShown: false
+          }}
         />
       </Stack.Navigator>
     </NavigationContainer>

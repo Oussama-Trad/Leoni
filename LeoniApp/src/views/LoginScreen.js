@@ -30,10 +30,10 @@ export default function LoginScreen({ navigation }) {
         await AsyncStorage.setItem('userToken', result.token);
         await AsyncStorage.setItem('userData', JSON.stringify(result.user));
         
-        // Rediriger vers l'écran de profil avec les données utilisateur
+        // Rediriger vers les onglets principaux avec les données utilisateur
         navigation.reset({
           index: 0,
-          routes: [{ name: 'Profile', params: { userData: result.user } }],
+          routes: [{ name: 'MainTabs', params: { userData: result.user } }],
         });
       } else {
         Alert.alert('Erreur', result.message || 'Échec de la connexion');

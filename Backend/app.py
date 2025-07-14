@@ -262,44 +262,40 @@ def login():
 @app.route('/document-request', methods=['POST'])
 def submit_document_request():
     try:
-        auth_header = request.headers.get('Authorization')
-        if not auth_header or not auth_header.startswith('Bearer '):
-            return jsonify({'success': False, 'message': 'Token manquant ou invalide'}), 401
-
-        token = auth_header.split(" ")[1]
-        decoded = verify_token(token)
-        if not decoded:
-            return jsonify({'success': False, 'message': 'Token invalide ou expiré'}), 401
-
         data = request.get_json()
-        if not data or not all(field in data for field in ['documentType', 'reason']):
-            return jsonify({'success': False, 'message': 'Type de document et motif requis'}), 400
+        if not data:
+            return jsonify({'success': False, 'message': 'Données manquantes'}), 400
+
+        # Vérifier les champs requis
+        required_fields = ['userId', 'documentType']
+        missing_fields = [field for field in required_fields if field not in data or not str(data[field]).strip()]
+        if missing_fields:
+            return jsonify({
+                'success': False, 
+                'message': f'Champs manquants: {", ".join(missing_fields)}'
+            }), 400
+
+        # Vérifier que l'utilisateur existe
+        user = users_collection.find_one({'_id': ObjectId(data['userId'])})
+        if not user:
+            return jsonify({'success': False, 'message': 'Utilisateur non trouvé'}), 404
 
         request_data = {
-            'userId': decoded['userId'],
+            'userId': data['userId'],
             'documentType': data['documentType'].strip(),
-            'reason': data['reason'].strip(),
-            'status': 'pending',
+            'description': data.get('description', '').strip() if data.get('description') else '',
+            'status': 'en attente',
             'createdAt': datetime.utcnow(),
-            'updatedAt': datetime.utcnow(),
-            'pickupDate': None
+            'updatedAt': datetime.utcnow()
         }
 
         result = document_requests_collection.insert_one(request_data)
-        request_data['_id'] = str(result.inserted_id)
 
-        print(f"✅ Nouvelle demande de document: {data['documentType']} par {decoded['userId']}")
+        print(f"✅ Nouvelle demande de document: {data['documentType']} par {data['userId']}")
 
         return jsonify({
             'success': True,
-            'message': 'Demande envoyée avec succès',
-            'request': {
-                'id': str(result.inserted_id),
-                'documentType': request_data['documentType'],
-                'reason': request_data['reason'],
-                'status': request_data['status'],
-                'createdAt': request_data['createdAt'].isoformat()
-            }
+            'message': 'Demande enregistrée'
         }), 201
 
     except Exception as e:
