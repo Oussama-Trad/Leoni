@@ -12,6 +12,7 @@ import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 import secrets
+import base64
 
 app = Flask(__name__)
 # Configuration CORS pour développement local
@@ -728,6 +729,65 @@ def update_document_status():
             'success': False,
             'message': 'Erreur serveur lors de la mise à jour',
             'error': str(e)
+        }), 500
+
+# Route pour uploader la photo de profil
+@app.route('/upload-profile-picture', methods=['POST', 'OPTIONS'])
+def upload_profile_picture():
+    if request.method == 'OPTIONS':
+        response = jsonify({'success': True})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', '*')
+        response.headers.add('Access-Control-Allow-Methods', '*')
+        return response
+
+    try:
+        # Vérifier le token
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({'success': False, 'message': 'Token manquant ou invalide'}), 401
+
+        token = auth_header.split(' ')[1]
+        payload = verify_token(token)
+
+        if not payload:
+            return jsonify({'success': False, 'message': 'Token invalide ou expiré'}), 401
+
+        data = request.get_json()
+
+        if not data or not data.get('imageData'):
+            return jsonify({'success': False, 'message': 'Image manquante'}), 400
+
+        image_data = data['imageData']
+
+        # Vérifier que c'est une image base64 valide
+        if not image_data.startswith('data:image/'):
+            return jsonify({'success': False, 'message': 'Format d\'image invalide'}), 400
+
+        # Mettre à jour la photo de profil dans la base de données
+        result = users_collection.update_one(
+            {'_id': ObjectId(payload['userId'])},
+            {'$set': {
+                'profilePicture': image_data,
+                'updatedAt': datetime.utcnow()
+            }}
+        )
+
+        if result.matched_count == 0:
+            return jsonify({'success': False, 'message': 'Utilisateur non trouvé'}), 404
+
+        print(f"✅ Photo de profil mise à jour pour: {payload.get('email', 'utilisateur')}")
+
+        return jsonify({
+            'success': True,
+            'message': 'Photo de profil mise à jour avec succès'
+        }), 200
+
+    except Exception as e:
+        print(f"❌ Erreur upload photo profil: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Erreur serveur'
         }), 500
 
 # Route pour demander la réinitialisation de mot de passe

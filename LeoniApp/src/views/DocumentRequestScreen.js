@@ -241,12 +241,12 @@ const DocumentRequestScreen = () => {
                   <Text style={styles.requestType}>{req.documentType}</Text>
                   <View style={[
                     styles.statusBadge,
-                    req.status === 'en attente' && styles.pendingBadge,
-                    req.status === 'en cours' && styles.inProgressBadge,
-                    req.status === 'confirmé' && styles.confirmedBadge,
-                    req.status === 'delivré' && styles.deliveredBadge
+                    (req.status?.current || req.status) === 'en attente' && styles.pendingBadge,
+                    (req.status?.current || req.status) === 'en cours' && styles.inProgressBadge,
+                    (req.status?.current || req.status) === 'confirmé' && styles.confirmedBadge,
+                    (req.status?.current || req.status) === 'delivré' && styles.deliveredBadge
                   ]}>
-                    <Text style={styles.statusText}>{req.status}</Text>
+                    <Text style={styles.statusText}>{req.status?.current || req.status || 'en attente'}</Text>
                   </View>
                 </View>
                 {req.description ? (

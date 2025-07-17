@@ -12,7 +12,7 @@ import {
   Platform
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { getProfile, updateProfile, logout } from '../controllers/ProfileController';
+import { getProfile, updateProfile, logout, uploadProfilePicture } from '../controllers/ProfileController';
 import { AuthContext } from '../contexts/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -44,6 +44,7 @@ const ProfileScreen = () => {
       const response = await getProfile();
       if (response && response.user) {
         setProfile(response.user);
+        setProfileImage(response.user.profilePicture || null);
         setFormData({
           firstName: response.user.firstName || '',
           lastName: response.user.lastName || '',
@@ -102,15 +103,35 @@ const ProfileScreen = () => {
       }
 
       const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: 'images',
         allowsEditing: true,
         aspect: [1, 1],
         quality: 0.8,
       });
 
       if (!result.canceled) {
-        setProfileImage(result.assets[0].uri);
-        // TODO: Implémenter l'upload de l'image vers le serveur
+        const imageUri = result.assets[0].uri;
+        setProfileImage(imageUri);
+
+        try {
+          // Uploader l'image vers le serveur
+          await uploadProfilePicture(imageUri);
+
+          // Mettre à jour le profil local
+          if (profile) {
+            setProfile(prev => ({
+              ...prev,
+              profilePicture: imageUri
+            }));
+          }
+
+          Alert.alert('Succès', 'Photo de profil mise à jour avec succès');
+        } catch (error) {
+          console.error('Erreur upload image:', error);
+          Alert.alert('Erreur', 'Impossible de sauvegarder la photo de profil');
+          // Remettre l'ancienne image en cas d'erreur
+          setProfileImage(profile?.profilePicture || null);
+        }
       }
     } catch (error) {
       console.error('Erreur sélection image:', error);
