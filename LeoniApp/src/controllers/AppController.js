@@ -1,7 +1,7 @@
 class AppController {
   constructor() {
     // Utiliser l'adresse IP du réseau Wi-Fi pour le développement
-    this.apiBaseUrl = 'http://192.168.1.16:5000'; // URL du serveur backend
+    this.apiBaseUrl = 'http://localhost:5000'; // URL du serveur backend
   }
 
   // Méthode pour tester la connexion au serveur
@@ -36,13 +36,15 @@ class AppController {
 
       const result = await response.json();
       
-      if (result.success) {
-        console.log('Connexion réussie:', result.user);
-      } else {
-        console.error('Erreur de connexion:', result.message);
-      }
-      
-      return result;
+        if (result.success) {
+          console.log('Connexion réussie:', result.user);
+          // Stocker le token avec la clé 'userToken' au lieu de 'token'
+          await AsyncStorage.setItem('userToken', result.token);
+        } else {
+          console.error('Erreur de connexion:', result.message);
+        }
+        
+        return result;
     } catch (error) {
       console.error('Erreur réseau login:', error);
       return { 

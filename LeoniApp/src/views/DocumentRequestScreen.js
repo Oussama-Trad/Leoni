@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
@@ -18,6 +18,7 @@ const DocumentRequestScreen = () => {
   const [documentType, setDocumentType] = useState('');
   const [description, setDescription] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [requests, setRequests] = useState([]);
 
   // Types de documents prédéfinis
   const documentTypes = [
@@ -30,6 +31,31 @@ const DocumentRequestScreen = () => {
   ];
 
   const [showDropdown, setShowDropdown] = useState(false);
+
+  // Charger les demandes existantes
+  const loadRequests = async () => {
+    try {
+      const userData = await AsyncStorage.getItem('userData');
+      if (!userData) return;
+
+      const user = JSON.parse(userData);
+      const response = await fetch(`http://localhost:5000/document-requests`, {
+        headers: {
+          'Authorization': `Bearer ${await AsyncStorage.getItem('token')}`
+        }
+      });
+      const data = await response.json();
+      if (data.success) {
+        setRequests(data.requests);
+      }
+    } catch (error) {
+      console.error('Erreur chargement:', error);
+    }
+  };
+
+  useEffect(() => {
+    loadRequests();
+  }, []);
 
   const handleSubmit = async () => {
     if (!documentType.trim()) {
@@ -55,7 +81,7 @@ const DocumentRequestScreen = () => {
         description: description.trim()
       };
 
-      const response = await fetch('http://192.168.1.16:5000/document-request', {
+      const response = await fetch('http://localhost:5000/document-request', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -67,9 +93,10 @@ const DocumentRequestScreen = () => {
 
       if (data.success) {
         Alert.alert('Succès', 'Demande envoyée avec succès');
-        // Réinitialiser le formulaire
+        // Réinitialiser et recharger
         setDocumentType('');
         setDescription('');
+        await loadRequests();
       } else {
         Alert.alert('Erreur', data.message || 'Erreur lors de l\'envoi de la demande');
       }
@@ -172,6 +199,30 @@ const DocumentRequestScreen = () => {
           </TouchableOpacity>
 
           <Text style={styles.requiredText}>* Champs obligatoires</Text>
+
+          {/* Liste des demandes */}
+          {requests.map((req, index) => (
+              <View key={index} style={styles.requestCard}>
+                <View style={styles.requestHeader}>
+                  <Text style={styles.requestType}>{req.documentType}</Text>
+                  <View style={[
+                    styles.statusBadge,
+                    req.status === 'en attente' && styles.pendingBadge,
+                    req.status === 'en cours' && styles.inProgressBadge,
+                    req.status === 'confirmé' && styles.confirmedBadge,
+                    req.status === 'delivré' && styles.deliveredBadge
+                  ]}>
+                    <Text style={styles.statusText}>{req.status}</Text>
+                  </View>
+                </View>
+                {req.description ? (
+                  <Text style={styles.requestDescription}>{req.description}</Text>
+                ) : null}
+                <Text style={styles.requestDate}>
+                  {new Date(req.createdAt).toLocaleDateString()}
+                </Text>
+              </View>
+            ))}
         </View>
       </ScrollView>
     </KeyboardAvoidingView>

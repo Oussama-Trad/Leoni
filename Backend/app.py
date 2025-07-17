@@ -10,12 +10,27 @@ import os
 import re
 
 app = Flask(__name__)
-CORS(app)  # Permettre les requêtes cross-origin
+# Configuration CORS globale
+CORS(app, resources={
+    r"/*": {
+        "origins": "*",
+        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        "allow_headers": ["*"],
+        "supports_credentials": True,
+        "expose_headers": ["Content-Disposition"]
+    }
+})
+
+# Middleware pour gérer les requêtes OPTIONS et éviter les doublons headers CORS
+@app.after_request
+def after_request(response):
+    # Supprimer ces headers car ils sont déjà gérés par CORS(app)
+    return response
 
 # Charger les variables d'environnement
 load_dotenv()
-MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb://localhost:27017/')
-JWT_SECRET_KEY = os.getenv('mongodb://localhost:27017/', '123')
+MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb+srv://oussamatrzd19:oussama123@leoniapp.grhnzgz.mongodb.net/')
+JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', '123')
 
 # Configuration de la connexion MongoDB avec gestion d'erreurs
 try:
@@ -24,14 +39,21 @@ try:
     client.server_info()
     print("✅ Connexion MongoDB réussie")
     
-    db = client['LeoniApp']
-    users_collection = db['users']
-    document_requests_collection = db['document_requests']
+    # Configuration de la base de données
+    DATABASE_NAME = os.getenv('DATABASE_NAME', 'LeoniApp')
+    USERS_COLLECTION = os.getenv('USERS_COLLECTION', 'users') 
+    DOCUMENTS_COLLECTION = os.getenv('DOCUMENTS_COLLECTION', 'document_requests')
+    
+    db = client[DATABASE_NAME]
+    users_collection = db[USERS_COLLECTION]
+    document_requests_collection = db[DOCUMENTS_COLLECTION]
     
     # Créer les index pour optimiser les requêtes
     users_collection.create_index([("email", 1)], unique=True)
     users_collection.create_index([("parentalEmail", 1)], unique=True)
     users_collection.create_index([("employeeId", 1)], unique=True)
+    document_requests_collection.create_index([("userId", 1)])
+    document_requests_collection.create_index([("status", 1)])
     
 except Exception as e:
     print(f"❌ Erreur de connexion MongoDB: {e}")
@@ -205,8 +227,14 @@ def register():
         }), 500
 
 # Route pour la connexion
-@app.route('/login', methods=['POST'])
+@app.route('/login', methods=['POST', 'OPTIONS'])
 def login():
+    if request.method == 'OPTIONS':
+        response = jsonify({'success': True})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', '*')
+        response.headers.add('Access-Control-Allow-Methods', '*')
+        return response
     try:
         data = request.get_json()
         
@@ -284,7 +312,15 @@ def submit_document_request():
             'userId': data['userId'],
             'documentType': data['documentType'].strip(),
             'description': data.get('description', '').strip() if data.get('description') else '',
-            'status': 'en attente',
+            'status': {
+                'current': 'en attente',
+                'progress': [
+                    {'step': 'en attente', 'date': None, 'completed': False},
+                    {'step': 'en cours', 'date': None, 'completed': False}, 
+                    {'step': 'accepté', 'date': None, 'completed': False},
+                    {'step': 'refusé', 'date': None, 'completed': False}
+                ]
+            },
             'createdAt': datetime.utcnow(),
             'updatedAt': datetime.utcnow()
         }
@@ -319,6 +355,58 @@ def get_document_requests():
         if not decoded:
             return jsonify({'success': False, 'message': 'Token invalide ou expiré'}), 401
 
+        # Migration des anciens documents avec status en string vers le nouveau format
+        document_requests_collection.update_many(
+            {'status': {'$type': 'string'}},
+            [{'$set': {
+                'status': {
+                    'current': '$status',
+                    'progress': {
+                        '$switch': {
+                            'branches': [
+                                {
+                                    'case': {'$eq': ['$status', 'en attente']},
+                                    'then': [
+                                        {'step': 'en attente', 'date': None, 'completed': True},
+                                        {'step': 'en cours', 'date': None, 'completed': False},
+                                        {'step': 'accepté', 'date': None, 'completed': False},
+                                        {'step': 'refusé', 'date': None, 'completed': False}
+                                    ]
+                                },
+                                {
+                                    'case': {'$eq': ['$status', 'en cours']}, 
+                                    'then': [
+                                        {'step': 'en attente', 'date': None, 'completed': True},
+                                        {'step': 'en cours', 'date': None, 'completed': True},
+                                        {'step': 'accepté', 'date': None, 'completed': False},
+                                        {'step': 'refusé', 'date': None, 'completed': False}
+                                    ]
+                                },
+                                {
+                                    'case': {'$eq': ['$status', 'accepté']},
+                                    'then': [
+                                        {'step': 'en attente', 'date': None, 'completed': True},
+                                        {'step': 'en cours', 'date': None, 'completed': True},
+                                        {'step': 'accepté', 'date': None, 'completed': True},
+                                        {'step': 'refusé', 'date': None, 'completed': False}
+                                    ]
+                                },
+                                {
+                                    'case': {'$eq': ['$status', 'refusé']},
+                                    'then': [
+                                        {'step': 'en attente', 'date': None, 'completed': True},
+                                        {'step': 'en cours', 'date': None, 'completed': False},
+                                        {'step': 'accepté', 'date': None, 'completed': False},
+                                        {'step': 'refusé', 'date': None, 'completed': True}
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                }
+            }}]
+        )
+        
         requests = list(document_requests_collection.find({'userId': decoded['userId']}))
         for req in requests:
             req['_id'] = str(req['_id'])
@@ -366,10 +454,10 @@ def get_users():
         }), 500
 
 # Route pour récupérer les informations du profil utilisateur
-@app.route('/api/me', methods=['GET'])
-def get_profile():
+@app.route('/api/users/<user_id>', methods=['GET', 'OPTIONS'])
+def get_user_by_id(user_id):
     try:
-        # Récupérer le token depuis le header Authorization
+        # Vérifier le token
         auth_header = request.headers.get('Authorization')
         if not auth_header or not auth_header.startswith('Bearer '):
             return jsonify({'success': False, 'message': 'Token manquant ou invalide'}), 401
@@ -382,7 +470,7 @@ def get_profile():
         
         # Récupérer l'utilisateur depuis la base de données
         user = users_collection.find_one({
-            'employeeId': payload['employeeId']
+            '_id': ObjectId(user_id)
         }, {'password': 0})  # Exclure le mot de passe
         
         if not user:
@@ -492,9 +580,61 @@ def update_profile():
         print(f"Erreur update_profile: {str(e)}")
         return jsonify({'success': False, 'message': 'Erreur serveur'}), 500
 
+# Route pour mettre à jour le statut d'un document
+@app.route('/update-document-status', methods=['PUT'])
+def update_document_status():
+    try:
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({'success': False, 'message': 'Token manquant ou invalide'}), 401
+
+        token = auth_header.split(" ")[1]
+        decoded = verify_token(token)
+        if not decoded:
+            return jsonify({'success': False, 'message': 'Token invalide ou expiré'}), 401
+
+        data = request.get_json()
+        if not data or not all(field in data for field in ['documentId', 'newStatus']):
+            return jsonify({'success': False, 'message': 'ID document et nouveau statut requis'}), 400
+
+        # Vérifier que le nouveau statut est valide
+        valid_status = ['en attente', 'en cours', 'accepté', 'refusé']
+        if data['newStatus'] not in valid_status:
+            return jsonify({'success': False, 'message': 'Statut invalide'}), 400
+
+        # Mettre à jour le statut et marquer l'étape comme complétée
+        result = document_requests_collection.update_one(
+            {'_id': ObjectId(data['documentId'])},
+            {'$set': {
+                'status.current': data['newStatus'],
+                'status.progress.$[elem].completed': True,
+                'status.progress.$[elem].date': datetime.utcnow(),
+                'updatedAt': datetime.utcnow()
+            }},
+            array_filters=[{'elem.step': data['newStatus']}]
+        )
+
+        if result.matched_count == 0:
+            return jsonify({'success': False, 'message': 'Document non trouvé'}), 404
+            
+        return jsonify({
+            'success': True,
+            'message': 'Statut mis à jour avec succès'
+        }), 200
+
+    except Exception as e:
+        print(f"❌ Erreur lors de la mise à jour du statut: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Erreur serveur lors de la mise à jour',
+            'error': str(e)
+        }), 500
 if __name__ == '__main__':
-    print("🚀 Démarrage du serveur Flask...")
-    print(f"📊 Base de données: {MONGODB_URI}")
-    print(f"🔑 JWT Secret configuré: {'Oui' if JWT_SECRET_KEY else 'Non'}")
-    
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    port = int(os.getenv('PORT', 5000))
+    try:
+        print(f"🚀 Serveur démarré sur le port {port}")
+        app.run(debug=True, host='0.0.0.0', port=port, threaded=True)
+    except KeyboardInterrupt:
+        print("\nArrêt du serveur...")
+    except Exception as e:
+        print(f"❌ Erreur du serveur: {e}")

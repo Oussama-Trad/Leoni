@@ -3,6 +3,7 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import ProfileScreen from './ProfileScreen';
 import DocumentRequestScreen from './DocumentRequestScreen';
+import DocumentsScreen from './DocumentsScreen';
 
 const Tab = createBottomTabNavigator();
 
@@ -17,6 +18,8 @@ const MainTabNavigator = () => {
             iconName = focused ? 'person' : 'person-outline';
           } else if (route.name === 'DocumentRequest') {
             iconName = focused ? 'document-text' : 'document-text-outline';
+          } else if (route.name === 'Documents') {
+            iconName = focused ? 'documents' : 'documents-outline';
           }
 
           return <Ionicons name={iconName} size={size} color={color} />;
@@ -50,6 +53,14 @@ const MainTabNavigator = () => {
         options={{
           title: 'Profil',
           headerTitle: 'Mon Profil',
+        }}
+      />
+      <Tab.Screen 
+        name="Documents" 
+        component={DocumentsScreen}
+        options={{
+          title: 'Mes Documents',
+          headerTitle: 'Mes Documents',
         }}
       />
       <Tab.Screen 
