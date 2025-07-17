@@ -1,64 +1,30 @@
 class ProfileModel {
-  constructor() {
-    this.profileData = {
-      firstName: '',
-      lastName: '',
-      email: '',
-      parentalEmail: '',
-      phoneNumber: '',
-      parentalPhoneNumber: ''
+  constructor(data = {}) {
+    this.userId = data.userId || null;
+    this.firstName = data.firstName || '';
+    this.lastName = data.lastName || '';
+    this.email = data.email || '';
+    this.phone = data.phone || '';
+    this.address = data.address || '';
+    this.department = data.department || '';
+    this.position = data.position || '';
+    this.createdAt = data.createdAt || new Date();
+    this.updatedAt = data.updatedAt || new Date();
+  }
+
+  toJSON() {
+    return {
+      userId: this.userId,
+      firstName: this.firstName,
+      lastName: this.lastName,
+      email: this.email,
+      phone: this.phone,
+      address: this.address,
+      department: this.department,
+      position: this.position,
+      createdAt: this.createdAt,
+      updatedAt: this.updatedAt
     };
-    this.isEditing = false;
-    this.isLoading = false;
-  }
-
-  // Getters
-  getProfileData() {
-    return { ...this.profileData };
-  }
-
-  getIsEditing() {
-    return this.isEditing;
-  }
-
-  getIsLoading() {
-    return this.isLoading;
-  }
-
-  // Setters
-  setProfileData(data) {
-    this.profileData = { ...this.profileData, ...data };
-    this.notify();
-  }
-
-  setField(field, value) {
-    this.profileData[field] = value;
-    this.notify();
-  }
-
-  setIsEditing(value) {
-    this.isEditing = value;
-    this.notify();
-  }
-
-  setIsLoading(value) {
-    this.isLoading = value;
-    this.notify();
-  }
-
-  // Méthodes d'abonnement aux changements
-  subscribe(callback) {
-    this.onChange = callback;
-  }
-
-  notify() {
-    if (this.onChange) {
-      this.onChange({
-        ...this.profileData,
-        isEditing: this.isEditing,
-        isLoading: this.isLoading
-      });
-    }
   }
 }
 

@@ -8,16 +8,24 @@ import jwt
 from dotenv import load_dotenv
 import os
 import re
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+import secrets
 
 app = Flask(__name__)
-# Configuration CORS globale
+# Configuration CORS pour développement local
 CORS(app, resources={
+    r"/login": {
+        "origins": ["http://localhost:8085", "http://localhost:8086"],
+        "methods": ["POST", "OPTIONS"],
+        "allow_headers": ["Content-Type"],
+        "supports_credentials": True
+    },
     r"/*": {
         "origins": "*",
         "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["*"],
-        "supports_credentials": True,
-        "expose_headers": ["Content-Disposition"]
+        "allow_headers": ["*"]
     }
 })
 
@@ -29,8 +37,15 @@ def after_request(response):
 
 # Charger les variables d'environnement
 load_dotenv()
-MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb+srv://oussamatrzd19:oussama123@leoniapp.grhnzgz.mongodb.net/')
+MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb+srv://oussamatrzd19:oussama123@leoniapp.grhnzgz.mongodb.net/LeoniApp')
 JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', '123')
+
+# Configuration email pour la réinitialisation de mot de passe
+EMAIL_HOST = os.getenv('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.getenv('EMAIL_PORT', '587'))
+EMAIL_USER = os.getenv('EMAIL_USER', 'your-email@gmail.com')
+EMAIL_PASSWORD = os.getenv('EMAIL_PASSWORD', 'your-app-password')
+EMAIL_FROM = os.getenv('EMAIL_FROM', 'noreply@leoniapp.com')
 
 # Configuration de la connexion MongoDB avec gestion d'erreurs
 try:
@@ -47,6 +62,7 @@ try:
     db = client[DATABASE_NAME]
     users_collection = db[USERS_COLLECTION]
     document_requests_collection = db[DOCUMENTS_COLLECTION]
+    password_reset_collection = db['password_resets']
     
     # Créer les index pour optimiser les requêtes
     users_collection.create_index([("email", 1)], unique=True)
@@ -54,6 +70,9 @@ try:
     users_collection.create_index([("employeeId", 1)], unique=True)
     document_requests_collection.create_index([("userId", 1)])
     document_requests_collection.create_index([("status", 1)])
+    password_reset_collection.create_index([("email", 1)])
+    password_reset_collection.create_index([("token", 1)], unique=True)
+    password_reset_collection.create_index([("expiresAt", 1)], expireAfterSeconds=0)
     
 except Exception as e:
     print(f"❌ Erreur de connexion MongoDB: {e}")
@@ -63,6 +82,32 @@ except Exception as e:
 def is_valid_email(email):
     email_regex = r'^[^\s@]+@[^\s@]+\.[^\s@]+$'
     return re.match(email_regex, email) is not None
+
+# Fonction pour envoyer un email
+def send_email(to_email, subject, body):
+    try:
+        msg = MIMEMultipart()
+        msg['From'] = EMAIL_FROM
+        msg['To'] = to_email
+        msg['Subject'] = subject
+
+        msg.attach(MIMEText(body, 'html'))
+
+        server = smtplib.SMTP(EMAIL_HOST, EMAIL_PORT)
+        server.starttls()
+        server.login(EMAIL_USER, EMAIL_PASSWORD)
+        text = msg.as_string()
+        server.sendmail(EMAIL_FROM, to_email, text)
+        server.quit()
+
+        return True
+    except Exception as e:
+        print(f"Erreur envoi email: {e}")
+        return False
+
+# Générer un token de réinitialisation
+def generate_reset_token():
+    return secrets.token_urlsafe(32)
 
 # Validation du numéro de téléphone
 def is_valid_phone(phone):
@@ -182,6 +227,7 @@ def register():
             'employeeId': employee_id,
             'department': 'Non spécifié',
             'position': 'Non spécifié',
+            'profilePicture': None,  # Ajout du champ photo de profil
             'createdAt': datetime.utcnow(),
             'updatedAt': datetime.utcnow()
         }
@@ -195,7 +241,8 @@ def register():
 
         # Générer un token JWT
         token = jwt.encode({
-            'userId': str(result.inserted_id),
+            '_id': str(result.inserted_id),
+            'userId': str(result.inserted_id),  # Keep for backwards compatibility
             'email': user['email'],
             'exp': datetime.utcnow() + timedelta(hours=24)
         }, JWT_SECRET_KEY, algorithm='HS256')
@@ -255,7 +302,8 @@ def login():
         )
 
         token = jwt.encode({
-            'userId': str(user['_id']),
+            '_id': str(user['_id']),
+            'userId': str(user['_id']),  # Keep for backwards compatibility
             'email': user['email'],
             'exp': datetime.utcnow() + timedelta(hours=24)
         }, JWT_SECRET_KEY, algorithm='HS256')
@@ -453,8 +501,53 @@ def get_users():
             'error': str(e)
         }), 500
 
-# Route pour récupérer les informations du profil utilisateur
-@app.route('/api/users/<user_id>', methods=['GET', 'OPTIONS'])
+# Route pour récupérer les informations du profil utilisateur connecté
+@app.route('/me', methods=['GET', 'OPTIONS'])
+def get_current_user():
+    if request.method == 'OPTIONS':
+        response = jsonify({'success': True})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', '*')
+        response.headers.add('Access-Control-Allow-Methods', '*')
+        return response
+
+    try:
+        # Vérifier le token
+        auth_header = request.headers.get('Authorization')
+        if not auth_header or not auth_header.startswith('Bearer '):
+            return jsonify({'success': False, 'message': 'Token manquant ou invalide'}), 401
+
+        token = auth_header.split(' ')[1]
+        payload = verify_token(token)
+
+        if not payload:
+            return jsonify({'success': False, 'message': 'Token invalide ou expiré'}), 401
+
+        # Récupérer l'utilisateur depuis la base de données
+        user = users_collection.find_one({
+            '_id': ObjectId(payload['userId'])
+        }, {'password': 0})  # Exclure le mot de passe
+
+        if not user:
+            return jsonify({'success': False, 'message': 'Utilisateur non trouvé'}), 404
+
+        # Convertir l'ObjectId en string pour le JSON
+        user['_id'] = str(user['_id'])
+        user['id'] = str(user['_id'])  # Ajouter aussi 'id' pour compatibilité
+
+        return jsonify({
+            'success': True,
+            'user': user
+        })
+
+    except jwt.ExpiredSignatureError:
+        return jsonify({'success': False, 'message': 'Session expirée'}), 401
+    except Exception as e:
+        print(f"Erreur get_current_user: {str(e)}")
+        return jsonify({'success': False, 'message': 'Erreur serveur'}), 500
+
+# Route pour récupérer les informations du profil utilisateur par ID
+@app.route('/users/<user_id>', methods=['GET', 'OPTIONS'])
 def get_user_by_id(user_id):
     try:
         # Vérifier le token
@@ -491,8 +584,15 @@ def get_user_by_id(user_id):
         return jsonify({'success': False, 'message': 'Erreur serveur'}), 500
 
 # Route pour mettre à jour le profil utilisateur
-@app.route('/api/update-profile', methods=['PUT'])
+@app.route('/update-profile', methods=['PUT', 'OPTIONS'])
 def update_profile():
+    if request.method == 'OPTIONS':
+        response = jsonify({'success': True})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', '*')
+        response.headers.add('Access-Control-Allow-Methods', '*')
+        return response
+
     try:
         # Vérifier le token
         auth_header = request.headers.get('Authorization')
@@ -629,6 +729,151 @@ def update_document_status():
             'message': 'Erreur serveur lors de la mise à jour',
             'error': str(e)
         }), 500
+
+# Route pour demander la réinitialisation de mot de passe
+@app.route('/forgot-password', methods=['POST', 'OPTIONS'])
+def forgot_password():
+    if request.method == 'OPTIONS':
+        response = jsonify({'success': True})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', '*')
+        response.headers.add('Access-Control-Allow-Methods', '*')
+        return response
+
+    try:
+        data = request.get_json()
+
+        if not data or not data.get('email'):
+            return jsonify({'success': False, 'message': 'Email requis'}), 400
+
+        email = data['email'].lower().strip()
+
+        if not is_valid_email(email):
+            return jsonify({'success': False, 'message': 'Email invalide'}), 400
+
+        # Vérifier si l'utilisateur existe
+        user = users_collection.find_one({'email': email})
+        if not user:
+            # Pour des raisons de sécurité, on ne révèle pas si l'email existe ou non
+            return jsonify({
+                'success': True,
+                'message': 'Si cet email existe, vous recevrez un lien de réinitialisation'
+            }), 200
+
+        # Générer un token de réinitialisation
+        reset_token = generate_reset_token()
+        expires_at = datetime.utcnow() + timedelta(hours=1)  # Expire dans 1 heure
+
+        # Sauvegarder le token dans la base de données
+        password_reset_collection.delete_many({'email': email})  # Supprimer les anciens tokens
+        password_reset_collection.insert_one({
+            'email': email,
+            'token': reset_token,
+            'expiresAt': expires_at,
+            'createdAt': datetime.utcnow()
+        })
+
+        # Créer le lien de réinitialisation
+        reset_link = f"http://localhost:8085/reset-password?token={reset_token}"
+
+        # Créer le contenu de l'email
+        email_subject = "Réinitialisation de votre mot de passe - Leoni App"
+        email_body = f"""
+        <html>
+        <body>
+            <h2>Réinitialisation de mot de passe</h2>
+            <p>Bonjour {user.get('firstName', '')},</p>
+            <p>Vous avez demandé la réinitialisation de votre mot de passe pour votre compte Leoni App.</p>
+            <p>Cliquez sur le lien ci-dessous pour réinitialiser votre mot de passe :</p>
+            <p><a href="{reset_link}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Réinitialiser mon mot de passe</a></p>
+            <p>Ce lien expire dans 1 heure.</p>
+            <p>Si vous n'avez pas demandé cette réinitialisation, ignorez cet email.</p>
+            <br>
+            <p>Cordialement,<br>L'équipe Leoni App</p>
+        </body>
+        </html>
+        """
+
+        # Envoyer l'email
+        if send_email(email, email_subject, email_body):
+            print(f"✅ Email de réinitialisation envoyé à: {email}")
+        else:
+            print(f"❌ Échec envoi email à: {email}")
+
+        return jsonify({
+            'success': True,
+            'message': 'Si cet email existe, vous recevrez un lien de réinitialisation'
+        }), 200
+
+    except Exception as e:
+        print(f"❌ Erreur forgot password: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Erreur serveur'
+        }), 500
+
+# Route pour réinitialiser le mot de passe
+@app.route('/reset-password', methods=['POST', 'OPTIONS'])
+def reset_password():
+    if request.method == 'OPTIONS':
+        response = jsonify({'success': True})
+        response.headers.add('Access-Control-Allow-Origin', '*')
+        response.headers.add('Access-Control-Allow-Headers', '*')
+        response.headers.add('Access-Control-Allow-Methods', '*')
+        return response
+
+    try:
+        data = request.get_json()
+
+        if not data or not data.get('token') or not data.get('newPassword'):
+            return jsonify({'success': False, 'message': 'Token et nouveau mot de passe requis'}), 400
+
+        token = data['token']
+        new_password = data['newPassword']
+
+        if len(new_password) < 6:
+            return jsonify({'success': False, 'message': 'Le mot de passe doit contenir au moins 6 caractères'}), 400
+
+        # Vérifier le token
+        reset_request = password_reset_collection.find_one({
+            'token': token,
+            'expiresAt': {'$gt': datetime.utcnow()}
+        })
+
+        if not reset_request:
+            return jsonify({'success': False, 'message': 'Token invalide ou expiré'}), 400
+
+        # Mettre à jour le mot de passe
+        hashed_password = bcrypt.hashpw(new_password.encode('utf-8'), bcrypt.gensalt())
+
+        result = users_collection.update_one(
+            {'email': reset_request['email']},
+            {'$set': {
+                'password': hashed_password,
+                'updatedAt': datetime.utcnow()
+            }}
+        )
+
+        if result.matched_count == 0:
+            return jsonify({'success': False, 'message': 'Utilisateur non trouvé'}), 404
+
+        # Supprimer le token utilisé
+        password_reset_collection.delete_one({'token': token})
+
+        print(f"✅ Mot de passe réinitialisé pour: {reset_request['email']}")
+
+        return jsonify({
+            'success': True,
+            'message': 'Mot de passe réinitialisé avec succès'
+        }), 200
+
+    except Exception as e:
+        print(f"❌ Erreur reset password: {e}")
+        return jsonify({
+            'success': False,
+            'message': 'Erreur serveur'
+        }), 500
+
 if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
     try:

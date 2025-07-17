@@ -1,19 +1,22 @@
 import React from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
+import { AuthProvider } from './src/contexts/AuthContext';
 import { StatusBar, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import SplashScreen from './src/views/SplashScreen';
 import HomeScreen from './src/views/HomeScreen';
 import LoginScreen from './src/views/LoginScreen';
 import RegisterScreen from './src/views/RegisterScreen';
+import ForgotPasswordScreen from './src/views/ForgotPasswordScreen';
 import MainTabNavigator from './src/views/MainTabNavigator';
 
 const Stack = createStackNavigator();
 
 export default function App() {
   return (
-    <NavigationContainer>
+    <AuthProvider>
+      <NavigationContainer>
       <StatusBar barStyle="light-content" backgroundColor="#002857" />
       <Stack.Navigator 
         initialRouteName="Splash"
@@ -50,22 +53,30 @@ export default function App() {
             headerShown: true
           }} 
         />
-        <Stack.Screen 
-          name="Register" 
-          component={RegisterScreen} 
-          options={{ 
+        <Stack.Screen
+          name="Register"
+          component={RegisterScreen}
+          options={{
             title: 'Inscription',
             headerShown: true
-          }} 
+          }}
         />
-        <Stack.Screen 
-          name="MainTabs" 
+        <Stack.Screen
+          name="ForgotPassword"
+          component={ForgotPasswordScreen}
+          options={{
+            headerShown: false
+          }}
+        />
+        <Stack.Screen
+          name="MainTabs"
           component={MainTabNavigator}
-          options={{ 
+          options={{
             headerShown: false
           }}
         />
       </Stack.Navigator>
-    </NavigationContainer>
+      </NavigationContainer>
+    </AuthProvider>
   );
 }

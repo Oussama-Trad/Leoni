@@ -1,393 +1,525 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useContext } from 'react';
 import { 
-  StyleSheet, 
-  Text, 
   View, 
+  Text, 
   TextInput, 
   TouchableOpacity, 
-  ScrollView, 
-  KeyboardAvoidingView, 
-  Platform,
-  ActivityIndicator,
-  Alert
+  StyleSheet, 
+  Alert, 
+  ActivityIndicator, 
+  Image, 
+  ScrollView,
+  Platform
 } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import ProfileController from '../controllers/ProfileController';
-import ProfileModel from '../models/ProfileModel';
-
-// Composant réutilisable pour les champs de formulaire
-const InputField = ({ 
-  icon, 
-  placeholder, 
-  value, 
-  onChangeText, 
-  keyboardType = 'default', 
-  editable = true 
-}) => (
-  <View style={styles.inputContainer}>
-    <Ionicons name={icon} size={20} color="#666" style={styles.inputIcon} />
-    <TextInput
-      style={[styles.input, !editable && styles.inputDisabled]}
-      placeholder={placeholder}
-      placeholderTextColor="#999"
-      value={value}
-      onChangeText={onChangeText}
-      keyboardType={keyboardType}
-      editable={editable}
-    />
-  </View>
-);
+import { getProfile, updateProfile, logout } from '../controllers/ProfileController';
+import { AuthContext } from '../contexts/AuthContext';
+import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 
 const ProfileScreen = () => {
   const navigation = useNavigation();
-  const [state, setState] = useState({
+  const { currentUser, logout: authLogout } = useContext(AuthContext);
+  const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState(null);
+  const [editMode, setEditMode] = useState(false);
+  const [profileImage, setProfileImage] = useState(null);
+  const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
     email: '',
-    parentalEmail: '',
-    phoneNumber: '',
-    parentalPhoneNumber: '',
-    isEditing: false,
-    isLoading: false
+    phone: '',
+    address: '',
+    department: '',
+    position: ''
   });
 
-  const modelRef = useRef(new ProfileModel());
-  const model = modelRef.current;
-
-  // Charger les données du profil au montage
   useEffect(() => {
-    loadProfile();
-    
-    // S'abonner aux changements du modèle
-    const handleModelChange = (newState) => {
-      setState(prevState => ({ ...prevState, ...newState }));
-    };
-    
-    model.subscribe(handleModelChange);
-    
-    return () => {
-      // Nettoyage
-      model.subscribe(null);
-    };
+    fetchProfile();
   }, []);
 
-  // Charger les données du profil
-  const loadProfile = async () => {
+  const fetchProfile = async () => {
+    setLoading(true);
     try {
-      model.setIsLoading(true);
-      const profileData = await ProfileController.fetchUserProfile();
-      model.setProfileData(profileData.user);
+      const response = await getProfile();
+      if (response && response.user) {
+        setProfile(response.user);
+        setFormData({
+          firstName: response.user.firstName || '',
+          lastName: response.user.lastName || '',
+          email: response.user.email || '',
+          phone: response.user.phoneNumber || '',
+          address: response.user.address || '',
+          department: response.user.department || '',
+          position: response.user.position || ''
+        });
+      }
     } catch (error) {
-      Alert.alert('Erreur', error.message || 'Impossible de charger le profil');
+      console.error('Erreur lors du chargement du profil:', error);
+      Alert.alert('Erreur', 'Impossible de charger le profil. Vérifiez votre connexion.');
     } finally {
-      model.setIsLoading(false);
+      setLoading(false);
     }
   };
 
-  // Gérer la modification d'un champ
-  const handleFieldChange = (field, value) => {
-    model.setField(field, value);
+  const handleInputChange = (field, value) => {
+    setFormData(prev => ({ ...prev, [field]: value }));
   };
 
-  // Basculer le mode édition
-  const toggleEdit = () => {
-    model.setIsEditing(!state.isEditing);
-  };
-
-  // Enregistrer les modifications
-  const handleSave = async () => {
+  const handleUpdate = async () => {
     try {
-      model.setIsLoading(true);
-      const updatedProfile = await ProfileController.updateUserProfile({
-        firstName: state.firstName,
-        lastName: state.lastName,
-        email: state.email,
-        parentalEmail: state.parentalEmail,
-        phoneNumber: state.phoneNumber,
-        parentalPhoneNumber: state.parentalPhoneNumber
-      });
-      
-      model.setProfileData(updatedProfile.user);
-      model.setIsEditing(false);
-      Alert.alert('Succès', 'Votre profil a été mis à jour avec succès');
+      await updateProfile(formData);
+      setEditMode(false);
+      fetchProfile();
+      Alert.alert('Succès', 'Profil mis à jour avec succès');
     } catch (error) {
-      Alert.alert('Erreur', error.message || 'Erreur lors de la mise à jour du profil');
-    } finally {
-      model.setIsLoading(false);
+      console.error('Erreur mise à jour profil:', error);
+      Alert.alert('Erreur', 'Impossible de mettre à jour le profil');
     }
   };
 
-  // Gérer la déconnexion
   const handleLogout = async () => {
     try {
-      await ProfileController.logout(navigation);
+      await logout();
+      authLogout();
+      navigation.reset({
+        index: 0,
+        routes: [{ name: 'Login' }],
+      });
     } catch (error) {
+      console.error('Erreur déconnexion:', error);
       Alert.alert('Erreur', 'Impossible de se déconnecter');
     }
   };
 
-  // Afficher le chargement
-  if (state.isLoading && !state.isEditing) {
-    return (
-      <View style={[styles.container, styles.loadingContainer]}>
-        <ActivityIndicator size="large" color="#6c5ce7" />
-      </View>
-    );
-  }
+  // Fonction pour sélectionner une image
+  const pickImage = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert('Permission requise', 'Nous avons besoin de la permission pour accéder à vos photos');
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled) {
+        setProfileImage(result.assets[0].uri);
+        // TODO: Implémenter l'upload de l'image vers le serveur
+      }
+    } catch (error) {
+      console.error('Erreur sélection image:', error);
+      Alert.alert('Erreur', 'Impossible de sélectionner l\'image');
+    }
+  };
 
   return (
-    <KeyboardAvoidingView 
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 64 : 0}
-    >
-      <ScrollView 
-        contentContainerStyle={styles.scrollContainer}
-        keyboardShouldPersistTaps="handled"
-      >
-        <View style={styles.header}>
-          <View style={styles.avatarContainer}>
-            <Ionicons name="person-circle" size={80} color="#fff" />
-          </View>
-          <Text style={styles.headerTitle}>
-            {state.firstName} {state.lastName}
-          </Text>
-          <Text style={styles.headerSubtitle}>{state.email}</Text>
-        </View>
-
-        <View style={styles.formContainer}>
-          <Text style={styles.sectionTitle}>Informations personnelles</Text>
-          
-          <InputField
-            icon="person-outline"
-            placeholder="Prénom *"
-            value={state.firstName}
-            onChangeText={(text) => handleFieldChange('firstName', text)}
-            editable={state.isEditing}
-          />
-          
-          <InputField
-            icon="person-outline"
-            placeholder="Nom *"
-            value={state.lastName}
-            onChangeText={(text) => handleFieldChange('lastName', text)}
-            editable={state.isEditing}
-          />
-          
-          <InputField
-            icon="mail-outline"
-            placeholder="Email *"
-            value={state.email}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            onChangeText={(text) => handleFieldChange('email', text)}
-            editable={state.isEditing}
-          />
-          
-          <InputField
-            icon="call-outline"
-            placeholder="Téléphone *"
-            value={state.phoneNumber}
-            keyboardType="phone-pad"
-            onChangeText={(text) => handleFieldChange('phoneNumber', text)}
-            editable={state.isEditing}
-          />
-          
-          <Text style={[styles.sectionTitle, { marginTop: 20 }]}>Contact d'urgence</Text>
-          
-          <InputField
-            icon="mail-outline"
-            placeholder="Email parental"
-            value={state.parentalEmail}
-            keyboardType="email-address"
-            autoCapitalize="none"
-            onChangeText={(text) => handleFieldChange('parentalEmail', text)}
-            editable={state.isEditing}
-          />
-          
-          <InputField
-            icon="call-outline"
-            placeholder="Téléphone parental"
-            value={state.parentalPhoneNumber}
-            keyboardType="phone-pad"
-            onChangeText={(text) => handleFieldChange('parentalPhoneNumber', text)}
-            editable={state.isEditing}
-          />
-
-          {state.isEditing ? (
-            <View style={styles.buttonContainer}>
-              <TouchableOpacity 
-                style={[styles.button, styles.saveButton]} 
-                onPress={handleSave}
-                disabled={state.isLoading}
-              >
-                {state.isLoading ? (
-                  <ActivityIndicator color="#fff" />
-                ) : (
-                  <Text style={styles.buttonText}>Enregistrer les modifications</Text>
-                )}
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.button, styles.cancelButton]} 
-                onPress={toggleEdit}
-                disabled={state.isLoading}
-              >
-                <Text style={[styles.buttonText, {color: '#6c5ce7'}]}>Annuler</Text>
-              </TouchableOpacity>
+    <ScrollView style={styles.container}>
+      {/* Header avec gradient */}
+      <View style={styles.header}>
+        <View style={styles.profileImageContainer}>
+          <TouchableOpacity onPress={pickImage} style={styles.imageWrapper}>
+            {profileImage || profile?.profilePicture ? (
+              <Image 
+                source={{ uri: profileImage || profile.profilePicture }} 
+                style={styles.profileImage}
+              />
+            ) : (
+              <View style={styles.defaultAvatar}>
+                <Ionicons name="person" size={50} color="#fff" />
+              </View>
+            )}
+            <View style={styles.cameraIcon}>
+              <Ionicons name="camera" size={20} color="#fff" />
             </View>
-          ) : (
-            <View style={styles.buttonContainer}>
-              <TouchableOpacity 
-                style={[styles.button, styles.editButton]} 
-                onPress={toggleEdit}
-              >
-                <Text style={styles.buttonText}>Modifier le profil</Text>
-              </TouchableOpacity>
-              
-              <TouchableOpacity 
-                style={[styles.button, styles.logoutButton]} 
-                onPress={handleLogout}
-              >
-                <Ionicons name="log-out-outline" size={20} color="#fff" style={styles.buttonIcon} />
-                <Text style={styles.buttonText}>Déconnexion</Text>
-              </TouchableOpacity>
+          </TouchableOpacity>
+          
+          {profile && (
+            <View style={styles.userInfo}>
+              <Text style={styles.userName}>
+                {profile.firstName} {profile.lastName}
+              </Text>
+              <Text style={styles.userRole}>
+                {profile.position || 'Employé'} • {profile.employeeId}
+              </Text>
             </View>
           )}
-          
-          <Text style={styles.requiredText}>* Champs obligatoires</Text>
         </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+      </View>
+
+      {/* Contenu principal */}
+      <View style={styles.content}>
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#007bff" />
+            <Text style={styles.loadingText}>Chargement du profil...</Text>
+          </View>
+        ) : (
+          <>
+            {editMode ? (
+              <View style={styles.editForm}>
+                <Text style={styles.sectionTitle}>Modifier le profil</Text>
+                
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Prénom</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.firstName}
+                    onChangeText={(value) => handleInputChange('firstName', value)}
+                    placeholder="Entrez votre prénom"
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Nom</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.lastName}
+                    onChangeText={(value) => handleInputChange('lastName', value)}
+                    placeholder="Entrez votre nom"
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Email</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.email}
+                    onChangeText={(value) => handleInputChange('email', value)}
+                    placeholder="Entrez votre email"
+                    keyboardType="email-address"
+                    autoCapitalize="none"
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Téléphone</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.phone}
+                    onChangeText={(value) => handleInputChange('phone', value)}
+                    placeholder="Entrez votre téléphone"
+                    keyboardType="phone-pad"
+                  />
+                </View>
+                
+                <View style={styles.buttonGroup}>
+                  <TouchableOpacity style={styles.saveButton} onPress={handleUpdate}>
+                    <Ionicons name="checkmark" size={20} color="#fff" />
+                    <Text style={styles.buttonText}>Sauvegarder</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity style={styles.cancelButton} onPress={() => setEditMode(false)}>
+                    <Ionicons name="close" size={20} color="#666" />
+                    <Text style={styles.cancelButtonText}>Annuler</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <View style={styles.profileInfo}>
+                <Text style={styles.sectionTitle}>Informations personnelles</Text>
+                
+                <View style={styles.infoCard}>
+                  <View style={styles.infoRow}>
+                    <Ionicons name="person-outline" size={20} color="#007bff" />
+                    <View style={styles.infoContent}>
+                      <Text style={styles.infoLabel}>Nom complet</Text>
+                      <Text style={styles.infoValue}>
+                        {profile.firstName} {profile.lastName}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.infoRow}>
+                    <Ionicons name="mail-outline" size={20} color="#007bff" />
+                    <View style={styles.infoContent}>
+                      <Text style={styles.infoLabel}>Email personnel</Text>
+                      <Text style={styles.infoValue}>{profile.email}</Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.infoRow}>
+                    <Ionicons name="call-outline" size={20} color="#007bff" />
+                    <View style={styles.infoContent}>
+                      <Text style={styles.infoLabel}>Téléphone</Text>
+                      <Text style={styles.infoValue}>
+                        {profile.phoneNumber || 'Non renseigné'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.infoRow}>
+                    <Ionicons name="mail-outline" size={20} color="#007bff" />
+                    <View style={styles.infoContent}>
+                      <Text style={styles.infoLabel}>Email parental</Text>
+                      <Text style={styles.infoValue}>
+                        {profile.parentalEmail || 'Non renseigné'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.infoRow}>
+                    <Ionicons name="call-outline" size={20} color="#007bff" />
+                    <View style={styles.infoContent}>
+                      <Text style={styles.infoLabel}>Téléphone parental</Text>
+                      <Text style={styles.infoValue}>
+                        {profile.parentalPhoneNumber || 'Non renseigné'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.infoRow}>
+                    <Ionicons name="id-card-outline" size={20} color="#007bff" />
+                    <View style={styles.infoContent}>
+                      <Text style={styles.infoLabel}>ID employé</Text>
+                      <Text style={styles.infoValue}>{profile.employeeId}</Text>
+                    </View>
+                  </View>
+                </View>
+
+                <View style={styles.actionButtons}>
+                  <TouchableOpacity style={styles.editButton} onPress={() => setEditMode(true)}>
+                    <Ionicons name="create-outline" size={20} color="#fff" />
+                    <Text style={styles.buttonText}>Modifier le profil</Text>
+                  </TouchableOpacity>
+                  
+                  <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
+                    <Ionicons name="log-out-outline" size={20} color="#fff" />
+                    <Text style={styles.buttonText}>Se déconnecter</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            )}
+          </>
+        )}
+      </View>
+    </ScrollView>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#002857',
-  },
-  loadingContainer: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  scrollContainer: {
-    flexGrow: 1,
-    paddingBottom: 30,
+    backgroundColor: '#f8f9fa',
   },
   header: {
-    padding: 20,
-    paddingTop: 30,
-    alignItems: 'center',
-    backgroundColor: 'rgba(0, 40, 87, 0.8)',
+    backgroundColor: '#007bff',
+    paddingTop: Platform.OS === 'ios' ? 50 : 30,
+    paddingBottom: 30,
+    paddingHorizontal: 20,
     borderBottomLeftRadius: 30,
     borderBottomRightRadius: 30,
-    marginBottom: 20,
+    elevation: 5,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3.84,
   },
-  avatarContainer: {
+  profileImageContainer: {
+    alignItems: 'center',
+  },
+  imageWrapper: {
+    position: 'relative',
+    marginBottom: 15,
+  },
+  profileImage: {
     width: 100,
     height: 100,
     borderRadius: 50,
-    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+    borderWidth: 4,
+    borderColor: '#fff',
+  },
+  defaultAvatar: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: 'rgba(255,255,255,0.3)',
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 15,
+    borderWidth: 4,
+    borderColor: '#fff',
   },
-  headerTitle: {
-    fontSize: 22,
+  cameraIcon: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#28a745',
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: '#fff',
+  },
+  userInfo: {
+    alignItems: 'center',
+  },
+  userName: {
+    fontSize: 24,
     fontWeight: 'bold',
     color: '#fff',
     marginBottom: 5,
   },
-  headerSubtitle: {
-    fontSize: 14,
-    color: 'rgba(255, 255, 255, 0.8)',
-    marginBottom: 10,
+  userRole: {
+    fontSize: 16,
+    color: 'rgba(255,255,255,0.8)',
   },
-  formContainer: {
-    paddingHorizontal: 20,
+  content: {
+    flex: 1,
+    padding: 20,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingTop: 50,
+  },
+  loadingText: {
     marginTop: 10,
+    fontSize: 16,
+    color: '#666',
   },
   sectionTitle: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: '#fff',
-    marginBottom: 15,
-    marginTop: 10,
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: '#333',
+    marginBottom: 20,
   },
-  inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  editForm: {
     backgroundColor: '#fff',
     borderRadius: 15,
-    marginBottom: 15,
-    paddingHorizontal: 15,
-    height: 55,
+    padding: 20,
+    elevation: 3,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 3,
+    shadowRadius: 3.84,
   },
-  inputIcon: {
-    marginRight: 10,
-    color: '#6c5ce7',
+  inputGroup: {
+    marginBottom: 20,
+  },
+  inputLabel: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#333',
+    marginBottom: 8,
   },
   input: {
-    flex: 1,
-    height: '100%',
-    color: '#333',
-    fontSize: 15,
-    fontFamily: Platform.OS === 'ios' ? 'System' : 'Roboto',
+    borderWidth: 1,
+    borderColor: '#ddd',
+    borderRadius: 10,
+    paddingHorizontal: 15,
+    paddingVertical: 12,
+    fontSize: 16,
+    backgroundColor: '#f8f9fa',
   },
-  inputDisabled: {
-    color: '#666',
-    opacity: 0.9,
-  },
-  buttonContainer: {
+  buttonGroup: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     marginTop: 20,
   },
-  button: {
-    height: 55,
-    borderRadius: 15,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 15,
-    flexDirection: 'row',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
-    elevation: 3,
-  },
-  editButton: {
-    backgroundColor: '#6c5ce7',
-  },
   saveButton: {
-    backgroundColor: '#6c5ce7',
+    backgroundColor: '#28a745',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
+    flex: 0.48,
   },
   cancelButton: {
-    backgroundColor: '#fff',
+    backgroundColor: '#f8f9fa',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 10,
     borderWidth: 1,
-    borderColor: '#6c5ce7',
-  },
-  logoutButton: {
-    backgroundColor: '#ff4757',
+    borderColor: '#ddd',
+    flex: 0.48,
   },
   buttonText: {
     color: '#fff',
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '600',
+    marginLeft: 5,
   },
-  buttonIcon: {
-    marginRight: 10,
+  cancelButtonText: {
+    color: '#666',
+    fontSize: 16,
+    fontWeight: '600',
+    marginLeft: 5,
   },
-  requiredText: {
-    color: 'rgba(255, 255, 255, 0.6)',
-    fontSize: 12,
-    textAlign: 'center',
-    marginTop: 10,
+  profileInfo: {
+    flex: 1,
+  },
+  infoCard: {
+    backgroundColor: '#fff',
+    borderRadius: 15,
+    padding: 20,
+    marginBottom: 20,
+    elevation: 3,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 3.84,
+  },
+  infoRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f0f0f0',
+  },
+  infoContent: {
+    marginLeft: 15,
+    flex: 1,
+  },
+  infoLabel: {
+    fontSize: 14,
+    color: '#666',
+    marginBottom: 2,
+  },
+  infoValue: {
+    fontSize: 16,
+    color: '#333',
+    fontWeight: '500',
+  },
+  actionButtons: {
+    gap: 15,
+  },
+  editButton: {
+    backgroundColor: '#007bff',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 15,
+    borderRadius: 10,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+  },
+  logoutButton: {
+    backgroundColor: '#dc3545',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 15,
+    borderRadius: 10,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
   },
 });
 

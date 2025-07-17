@@ -1,56 +1,75 @@
-import { Alert } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { jwtDecode } from 'jwt-decode';
+import { BASE_URL } from '../config';
 
-const API_BASE_URL = 'http://localhost:5000/api';
-
-class ProfileController {
-  static async fetchUserProfile() {
-    try {
-      const token = await AsyncStorage.getItem('userToken');
-      if (!token) throw new Error('Aucun token trouvé');
-
-      // Utilisation correcte de jwtDecode avec le token récupéré
-      const decoded = jwtDecode(token);
-      
-      if (!decoded?.userId) {
-        throw new Error('Token invalide - userId manquant');
-      }
-
-      const response = await fetch(`${API_BASE_URL}/api/users/${decoded.userId}`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-
-      // Vérifier d'abord le type de contenu
-      const contentType = response.headers.get('content-type');
-      if (!contentType.includes('application/json')) {
-        throw new Error(`Réponse non-JSON reçue: ${contentType}`);
-      }
-
-      if (!response.ok) {
-        try {
-          const error = await response.json();
-          throw new Error(error.message || response.statusText);
-        } catch (parseError) {
-          throw new Error(`Erreur HTTP ${response.status}: ${await response.text()}`);
-        }
-      }
-
-      try {
-        return await response.json();
-      } catch (parseError) {
-        throw new Error('Format de réponse invalide');
-      }
-    } catch (error) {
-      console.error('Erreur fetchUserProfile:', error);
-      throw error;
+export const getProfile = async () => {
+  try {
+    const token = await AsyncStorage.getItem('userToken');
+    if (!token) {
+      throw new Error('Token non trouvé');
     }
-  }
-  
-  // ... (le reste du fichier reste inchangé)
-}
 
-export default ProfileController;
+    const response = await fetch(`${BASE_URL}/me`, {
+      method: 'GET',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (data.success) {
+      return data;
+    } else {
+      throw new Error(data.message || 'Erreur lors de la récupération du profil');
+    }
+  } catch (error) {
+    throw new Error(error.message || 'Failed to fetch profile');
+  }
+};
+
+export const updateProfile = async (profileData) => {
+  try {
+    const token = await AsyncStorage.getItem('userToken');
+    if (!token) {
+      throw new Error('Token non trouvé');
+    }
+
+    const response = await fetch(`${BASE_URL}/update-profile`, {
+      method: 'PUT',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        ...profileData,
+        updatedAt: new Date()
+      })
+    });
+
+    if (!response.ok) {
+      throw new Error(`HTTP error! status: ${response.status}`);
+    }
+
+    const data = await response.json();
+    if (data.success) {
+      return data;
+    } else {
+      throw new Error(data.message || 'Erreur lors de la mise à jour du profil');
+    }
+  } catch (error) {
+    throw new Error(error.message || 'Failed to update profile');
+  }
+};
+
+export const logout = async () => {
+  try {
+    await AsyncStorage.multiRemove(['userToken', 'userData']);
+    return { success: true };
+  } catch (error) {
+    throw new Error('Erreur lors de la déconnexion');
+  }
+};

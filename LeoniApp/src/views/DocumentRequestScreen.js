@@ -36,25 +36,52 @@ const DocumentRequestScreen = () => {
   const loadRequests = async () => {
     try {
       const userData = await AsyncStorage.getItem('userData');
-      if (!userData) return;
+      const token = await AsyncStorage.getItem('userToken');
+
+      if (!userData || !token) {
+        console.log('Données utilisateur ou token manquants');
+        return;
+      }
 
       const user = JSON.parse(userData);
+      console.log('Chargement des demandes pour:', user.email);
+
       const response = await fetch(`http://localhost:5000/document-requests`, {
         headers: {
-          'Authorization': `Bearer ${await AsyncStorage.getItem('token')}`
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json'
         }
       });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       const data = await response.json();
+      console.log('Réponse demandes:', data);
+
       if (data.success) {
-        setRequests(data.requests);
+        setRequests(data.requests || []);
+      } else {
+        console.error('Erreur API:', data.message);
       }
     } catch (error) {
-      console.error('Erreur chargement:', error);
+      console.error('Erreur chargement demandes:', error);
+      // Ne pas faire planter l'app, juste logger l'erreur
+      setRequests([]);
     }
   };
 
   useEffect(() => {
-    loadRequests();
+    const initializeScreen = async () => {
+      try {
+        await loadRequests();
+      } catch (error) {
+        console.error('Erreur initialisation écran:', error);
+      }
+    };
+
+    initializeScreen();
   }, []);
 
   const handleSubmit = async () => {
@@ -74,9 +101,16 @@ const DocumentRequestScreen = () => {
       }
 
       const user = JSON.parse(userData);
-      
+      console.log('Données utilisateur:', user);
+
+      const userId = user.id || user._id || user.userId;
+      if (!userId) {
+        Alert.alert('Erreur', 'ID utilisateur manquant');
+        return;
+      }
+
       const requestData = {
-        userId: user.id,
+        userId: userId,
         documentType: documentType.trim(),
         description: description.trim()
       };
