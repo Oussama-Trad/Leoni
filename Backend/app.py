@@ -26,7 +26,8 @@ def after_request(response):
 
 # Charger les variables d'environnement
 load_dotenv()
-MONGODB_URI = os.getenv('MONGODB_URI', 'mongodb+srv://oussamatrzd19:oussama123@leoniapp.grhnzgz.mongodb.net/LeoniApp')
+MONGODB_ATLAS_URI = os.getenv('MONGODB_URI', 'mongodb+srv://oussamatrzd19:oussama123@leoniapp.grhnzgz.mongodb.net/LeoniApp')
+MONGODB_LOCAL_URI = 'mongodb://localhost:27017/LeoniApp'
 JWT_SECRET_KEY = os.getenv('JWT_SECRET_KEY', '123')
 
 # Configuration email pour la réinitialisation de mot de passe
@@ -36,36 +37,67 @@ EMAIL_USER = os.getenv('EMAIL_USER', 'your-email@gmail.com')
 EMAIL_PASSWORD = os.getenv('EMAIL_PASSWORD', 'your-app-password')
 EMAIL_FROM = os.getenv('EMAIL_FROM', 'noreply@leoniapp.com')
 
-# Configuration de la connexion MongoDB avec gestion d'erreurs
-try:
-    client = MongoClient(MONGODB_URI)
-    # Tester la connexion
-    client.server_info()
-    print("✅ Connexion MongoDB réussie")
-    
+# Fonction pour essayer de se connecter à MongoDB avec fallback
+def connect_to_mongodb():
+    # Essayer d'abord MongoDB Atlas (cloud)
+    try:
+        print("🔍 Tentative de connexion à MongoDB Atlas...")
+        client = MongoClient(MONGODB_ATLAS_URI, serverSelectionTimeoutMS=10000)
+        client.server_info()  # Test de connexion
+        print("✅ Connexion MongoDB Atlas réussie")
+        return client, "Atlas"
+    except Exception as e:
+        print(f"❌ Échec connexion MongoDB Atlas: {str(e)}")
+
+    # Fallback : essayer MongoDB local
+    try:
+        print("🔍 Tentative de connexion à MongoDB local...")
+        client = MongoClient(MONGODB_LOCAL_URI, serverSelectionTimeoutMS=5000)
+        client.server_info()  # Test de connexion
+        print("✅ Connexion MongoDB local réussie")
+        return client, "Local"
+    except Exception as e:
+        print(f"❌ Échec connexion MongoDB local: {str(e)}")
+
+    # Si aucune connexion ne fonctionne, utiliser une base de données en mémoire (fallback ultime)
+    print("⚠️ Utilisation d'une base de données temporaire en mémoire")
+    return None, "Memory"
+
+# Établir la connexion MongoDB
+client, db_type = connect_to_mongodb()
+
+if client:
     # Configuration de la base de données
     DATABASE_NAME = os.getenv('DATABASE_NAME', 'LeoniApp')
-    USERS_COLLECTION = os.getenv('USERS_COLLECTION', 'users') 
+    USERS_COLLECTION = os.getenv('USERS_COLLECTION', 'users')
     DOCUMENTS_COLLECTION = os.getenv('DOCUMENTS_COLLECTION', 'document_requests')
-    
+
     db = client[DATABASE_NAME]
     users_collection = db[USERS_COLLECTION]
     document_requests_collection = db[DOCUMENTS_COLLECTION]
     password_reset_collection = db['password_resets']
-    
-    # Créer les index pour optimiser les requêtes
-    users_collection.create_index([("email", 1)], unique=True)
-    users_collection.create_index([("parentalEmail", 1)], unique=True)
-    users_collection.create_index([("employeeId", 1)], unique=True)
-    document_requests_collection.create_index([("userId", 1)])
-    document_requests_collection.create_index([("status", 1)])
-    password_reset_collection.create_index([("email", 1)])
-    password_reset_collection.create_index([("token", 1)], unique=True)
-    password_reset_collection.create_index([("expiresAt", 1)], expireAfterSeconds=0)
-    
-except Exception as e:
-    print(f"❌ Erreur de connexion MongoDB: {e}")
-    exit(1)
+
+    # Créer les index pour optimiser les requêtes (seulement si pas en mémoire)
+    try:
+        users_collection.create_index([("email", 1)], unique=True)
+        users_collection.create_index([("parentalEmail", 1)], unique=True)
+        users_collection.create_index([("employeeId", 1)], unique=True)
+        document_requests_collection.create_index([("userId", 1)])
+        document_requests_collection.create_index([("status", 1)])
+        password_reset_collection.create_index([("email", 1)])
+        password_reset_collection.create_index([("token", 1)], unique=True)
+        password_reset_collection.create_index([("expiresAt", 1)], expireAfterSeconds=0)
+        print(f"✅ Index créés pour la base {db_type}")
+    except Exception as index_error:
+        print(f"⚠️ Impossible de créer les index: {index_error}")
+
+else:
+    # Mode mémoire : utiliser des dictionnaires Python comme fallback
+    print("⚠️ Mode base de données temporaire activé")
+    users_collection = {}
+    document_requests_collection = {}
+    password_reset_collection = {}
+    db_type = "Memory"
 
 # Validation de l'email
 def is_valid_email(email):
@@ -135,12 +167,22 @@ def verify_token(token):
 @app.route('/health', methods=['GET'])
 def health_check():
     try:
-        # Tester la connexion MongoDB
-        client.server_info()
+        mongodb_status = "Déconnecté"
+
+        if client:
+            try:
+                client.server_info()
+                mongodb_status = f"Connecté ({db_type})"
+            except:
+                mongodb_status = f"Erreur ({db_type})"
+        else:
+            mongodb_status = "Mode mémoire temporaire"
+
         return jsonify({
             'success': True,
             'message': 'Serveur en ligne',
-            'mongodb': 'Connecté',
+            'mongodb': mongodb_status,
+            'database_type': db_type,
             'timestamp': datetime.utcnow().isoformat()
         }), 200
     except Exception as e:

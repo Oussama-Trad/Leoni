@@ -11,12 +11,14 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { BASE_URL } from '../config';
+import NetworkService from '../services/NetworkService';
 
 const DocumentsScreen = () => {
   const [documents, setDocuments] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
+
+
 
   const loadDocuments = async () => {
     try {
@@ -29,14 +31,12 @@ const DocumentsScreen = () => {
       }
 
       console.log('🔍 FRONTEND: Token trouvé, appel API...');
-      console.log('🔍 FRONTEND: URL =', `${BASE_URL}/document-requests`);
 
-      const response = await fetch(`${BASE_URL}/document-requests`, {
+      const response = await NetworkService.fetch('/document-requests', {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
-        },
-        timeout: 10000
+        }
       });
 
       console.log('🔍 FRONTEND: Réponse reçue, status =', response.status);
@@ -98,6 +98,8 @@ const DocumentsScreen = () => {
         <Ionicons name="documents" size={60} color="#fff" />
         <Text style={styles.headerTitle}>Mes Documents</Text>
       </View>
+
+
 
       <ScrollView
         contentContainerStyle={styles.scrollContainer}

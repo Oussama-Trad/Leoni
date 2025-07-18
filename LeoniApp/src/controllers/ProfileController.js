@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { BASE_URL } from '../config';
+import NetworkService from '../services/NetworkService';
 
 export const getProfile = async () => {
   try {
@@ -11,13 +11,12 @@ export const getProfile = async () => {
     console.log('🔍 PROFILE_CONTROLLER: Appel API /me...');
     console.log('🔍 PROFILE_CONTROLLER: URL =', `${BASE_URL}/me`);
 
-    const response = await fetch(`${BASE_URL}/me`, {
+    const response = await NetworkService.fetch('/me', {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
-      },
-      timeout: 10000
+      }
     });
 
     console.log('🔍 PROFILE_CONTROLLER: Réponse reçue, status =', response.status);
@@ -39,10 +38,17 @@ export const getProfile = async () => {
     }
   } catch (error) {
     console.error('❌ PROFILE_CONTROLLER: Erreur:', error);
-    if (error.message.includes('fetch')) {
-      throw new Error('Impossible de se connecter au serveur. Vérifiez que le backend est démarré.');
+
+    // Gestion spécifique des erreurs de réseau
+    if (error.message.includes('fetch') || error.message.includes('Network request failed')) {
+      throw new Error('Impossible de se connecter au serveur. Vérifiez que le backend est démarré sur http://localhost:5000');
     }
-    throw new Error(error.message || 'Failed to fetch profile');
+
+    if (error.message.includes('Failed to fetch')) {
+      throw new Error('Erreur de connexion réseau. Le serveur backend n\'est peut-être pas accessible.');
+    }
+
+    throw new Error(error.message || 'Erreur lors de la récupération du profil');
   }
 };
 
@@ -72,7 +78,7 @@ export const updateProfile = async (profileData) => {
 
     console.log('🔍 UPDATE_PROFILE_CONTROLLER: Corps de la requête final:', requestBody);
 
-    const response = await fetch(`${BASE_URL}/update-profile`, {
+    const response = await NetworkService.fetch('/update-profile', {
       method: 'PUT',
       headers: {
         'Authorization': `Bearer ${token}`,

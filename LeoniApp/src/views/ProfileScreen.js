@@ -51,46 +51,50 @@ const ProfileScreen = () => {
       if (response && response.user) {
         console.log('🔍 PROFILE: Données utilisateur reçues:', response.user);
 
-        // Sauvegarder les données complètes localement
-        await AsyncStorage.setItem('userData', JSON.stringify(response.user));
-        console.log('✅ PROFILE: Données complètes sauvegardées localement');
+        // Récupérer les données locales existantes pour préserver les modifications
+        const existingData = await AsyncStorage.getItem('userData');
+        let existingUserData = {};
 
-        setProfile(response.user);
-        setProfileImage(response.user.profilePicture || null);
+        if (existingData) {
+          existingUserData = JSON.parse(existingData);
+          console.log('🔍 PROFILE: Données locales existantes:', existingUserData);
+        }
+
+        // Fusionner les données du serveur avec les modifications locales
+        const mergedUserData = {
+          ...response.user,
+          // Préserver les modifications locales si elles existent
+          department: existingUserData.department || response.user.department,
+          position: existingUserData.position || response.user.position,
+          address: existingUserData.address || response.user.address,
+          profilePicture: existingUserData.profilePicture || response.user.profilePicture
+        };
+
+        // Sauvegarder les données fusionnées
+        await AsyncStorage.setItem('userData', JSON.stringify(mergedUserData));
+        console.log('✅ PROFILE: Données fusionnées sauvegardées:', mergedUserData);
+
+        setProfile(mergedUserData);
+        setProfileImage(mergedUserData.profilePicture || null);
         setFormData({
-          firstName: response.user.firstName || '',
-          lastName: response.user.lastName || '',
-          email: response.user.email || '',
-          phone: response.user.phoneNumber || '',
-          address: response.user.address || '',
-          department: response.user.department || '',
-          position: response.user.position || ''
+          firstName: mergedUserData.firstName || '',
+          lastName: mergedUserData.lastName || '',
+          email: mergedUserData.email || '',
+          phone: mergedUserData.phoneNumber || '',
+          address: mergedUserData.address || '',
+          department: mergedUserData.department || '',
+          position: mergedUserData.position || ''
         });
-        console.log('🔍 PROFILE: FormData mis à jour:', {
-          firstName: response.user.firstName,
-          lastName: response.user.lastName,
-          email: response.user.email,
-          phone: response.user.phoneNumber,
-          address: response.user.address,
-          department: response.user.department,
-          position: response.user.position,
-          parentalEmail: response.user.parentalEmail,
-          parentalPhoneNumber: response.user.parentalPhoneNumber
-        });
-        console.log('✅ PROFILE: Profil chargé avec succès');
+        console.log('✅ PROFILE: Profil chargé avec succès (avec préservation des modifications)');
       } else {
         console.error('❌ PROFILE: Réponse invalide:', response);
         await loadLocalProfile();
       }
     } catch (error) {
       console.error('❌ PROFILE: Erreur lors du chargement du profil:', error);
-      // Essayer de charger les données locales en cas d'erreur serveur
+      // Charger les données locales en cas d'erreur serveur
       await loadLocalProfile();
-      Alert.alert(
-        'Mode hors ligne',
-        'Affichage des données locales. Démarrez le serveur backend pour synchroniser.',
-        [{ text: 'OK' }]
-      );
+      console.log('🔍 PROFILE: Utilisation des données locales en mode hors ligne');
     } finally {
       setLoading(false);
     }

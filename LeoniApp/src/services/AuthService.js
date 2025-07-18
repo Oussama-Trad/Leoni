@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { BASE_URL } from '../config';
+import NetworkService from './NetworkService';
 
 class AuthService {
   // Vérifier si l'utilisateur est connecté
@@ -29,13 +29,12 @@ class AuthService {
   // Valider le token avec le serveur
   static async validateToken(token) {
     try {
-      const response = await fetch(`${BASE_URL}/me`, {
+      const response = await NetworkService.fetch('/me', {
         method: 'GET',
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
-        },
-        timeout: 5000
+        }
       });
 
       return response.ok;
@@ -75,21 +74,33 @@ class AuthService {
   // Sauvegarder les données de connexion
   static async saveAuthData(token, userData) {
     try {
-      // Compléter automatiquement les données utilisateur avec les valeurs par défaut
+      // Récupérer les données existantes pour préserver les modifications
+      const existingData = await AsyncStorage.getItem('userData');
+      let existingUserData = {};
+
+      if (existingData) {
+        existingUserData = JSON.parse(existingData);
+        console.log('🔍 AUTH: Données existantes trouvées:', existingUserData);
+      }
+
+      // Fusionner les nouvelles données avec les existantes (préserver les modifications)
       const completeUserData = {
+        // Données de base du serveur
         ...userData,
-        phoneNumber: userData.phoneNumber || '12345678',
-        parentalEmail: userData.parentalEmail || 'aa@gmail.com',
-        parentalPhoneNumber: userData.parentalPhoneNumber || '12345899',
-        department: userData.department || 'Non spécifié',
-        position: userData.position || 'Non spécifié',
-        address: userData.address || '',
-        profilePicture: userData.profilePicture || null
+        // Compléter avec les valeurs par défaut si manquantes
+        phoneNumber: userData.phoneNumber || existingUserData.phoneNumber || '12345678',
+        parentalEmail: userData.parentalEmail || existingUserData.parentalEmail || 'aa@gmail.com',
+        parentalPhoneNumber: userData.parentalPhoneNumber || existingUserData.parentalPhoneNumber || '12345899',
+        department: userData.department || existingUserData.department || 'Non spécifié',
+        position: userData.position || existingUserData.position || 'Non spécifié',
+        address: userData.address || existingUserData.address || '',
+        // Préserver la photo de profil existante si pas de nouvelle
+        profilePicture: userData.profilePicture || existingUserData.profilePicture || null
       };
 
       await AsyncStorage.setItem('userToken', token);
       await AsyncStorage.setItem('userData', JSON.stringify(completeUserData));
-      console.log('✅ AUTH: Données complètes sauvegardées:', completeUserData);
+      console.log('✅ AUTH: Données complètes sauvegardées (avec préservation):', completeUserData);
       return true;
     } catch (error) {
       console.error('Erreur sauvegarde données auth:', error);
@@ -111,7 +122,7 @@ class AuthService {
   // Connexion
   static async login(email, password) {
     try {
-      const response = await fetch(`${BASE_URL}/login`, {
+      const response = await NetworkService.fetch('/login', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -139,7 +150,7 @@ class AuthService {
   // Demande de réinitialisation de mot de passe
   static async requestPasswordReset(email) {
     try {
-      const response = await fetch(`${BASE_URL}/forgot-password`, {
+      const response = await NetworkService.fetch('/forgot-password', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -158,7 +169,7 @@ class AuthService {
   // Réinitialisation de mot de passe avec token
   static async resetPassword(token, newPassword) {
     try {
-      const response = await fetch(`${BASE_URL}/reset-password`, {
+      const response = await NetworkService.fetch('/reset-password', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
