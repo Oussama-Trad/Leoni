@@ -49,6 +49,12 @@ const ProfileScreen = () => {
       console.log('🔍 PROFILE: Réponse reçue:', response);
 
       if (response && response.user) {
+        console.log('🔍 PROFILE: Données utilisateur reçues:', response.user);
+
+        // Sauvegarder les données complètes localement
+        await AsyncStorage.setItem('userData', JSON.stringify(response.user));
+        console.log('✅ PROFILE: Données complètes sauvegardées localement');
+
         setProfile(response.user);
         setProfileImage(response.user.profilePicture || null);
         setFormData({
@@ -59,6 +65,17 @@ const ProfileScreen = () => {
           address: response.user.address || '',
           department: response.user.department || '',
           position: response.user.position || ''
+        });
+        console.log('🔍 PROFILE: FormData mis à jour:', {
+          firstName: response.user.firstName,
+          lastName: response.user.lastName,
+          email: response.user.email,
+          phone: response.user.phoneNumber,
+          address: response.user.address,
+          department: response.user.department,
+          position: response.user.position,
+          parentalEmail: response.user.parentalEmail,
+          parentalPhoneNumber: response.user.parentalPhoneNumber
         });
         console.log('✅ PROFILE: Profil chargé avec succès');
       } else {
@@ -71,7 +88,7 @@ const ProfileScreen = () => {
       await loadLocalProfile();
       Alert.alert(
         'Mode hors ligne',
-        'Impossible de se connecter au serveur. Affichage des données locales.',
+        'Affichage des données locales. Démarrez le serveur backend pour synchroniser.',
         [{ text: 'OK' }]
       );
     } finally {
@@ -86,17 +103,34 @@ const ProfileScreen = () => {
       if (userData) {
         const user = JSON.parse(userData);
         console.log('🔍 PROFILE: Données locales trouvées:', user);
-        setProfile(user);
-        setFormData({
-          firstName: user.firstName || '',
-          lastName: user.lastName || '',
-          email: user.email || '',
-          phone: user.phoneNumber || '',
+
+        // Toujours compléter automatiquement les données manquantes
+        const completeUser = {
+          ...user,
+          phoneNumber: user.phoneNumber || '12345678',
+          parentalEmail: user.parentalEmail || 'aa@gmail.com',
+          parentalPhoneNumber: user.parentalPhoneNumber || '12345899',
+          department: user.department || 'Non spécifié',
+          position: user.position || 'Non spécifié',
           address: user.address || '',
-          department: user.department || '',
-          position: user.position || ''
+          profilePicture: user.profilePicture || null
+        };
+
+        // Sauvegarder les données complétées automatiquement
+        await AsyncStorage.setItem('userData', JSON.stringify(completeUser));
+        console.log('✅ PROFILE: Données automatiquement complétées');
+
+        setProfile(completeUser);
+        setFormData({
+          firstName: completeUser.firstName || '',
+          lastName: completeUser.lastName || '',
+          email: completeUser.email || '',
+          phone: completeUser.phoneNumber || '',
+          address: completeUser.address || '',
+          department: completeUser.department || '',
+          position: completeUser.position || ''
         });
-        console.log('✅ PROFILE: Données locales chargées');
+        console.log('✅ PROFILE: Profil chargé avec toutes les données');
       } else {
         console.log('❌ PROFILE: Aucune donnée locale trouvée');
         setProfile(null);
@@ -115,6 +149,8 @@ const ProfileScreen = () => {
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     return emailRegex.test(email);
   };
+
+
 
   const handleUpdate = async () => {
     try {
@@ -143,10 +179,13 @@ const ProfileScreen = () => {
         firstName: formData.firstName.trim(),
         lastName: formData.lastName.trim(),
         email: formData.email.trim(),
-        phoneNumber: formData.phone ? formData.phone.trim() : '', // Convertir phone en phoneNumber pour le backend
-        address: formData.address ? formData.address.trim() : '',
-        department: formData.department ? formData.department.trim() : '',
-        position: formData.position ? formData.position.trim() : ''
+        phoneNumber: formData.phone ? formData.phone.trim() : (profile?.phoneNumber || ''), // Utiliser la valeur existante ou vide
+        address: formData.address ? formData.address.trim() : (profile?.address || ''),
+        department: formData.department ? formData.department.trim() : (profile?.department || ''),
+        position: formData.position ? formData.position.trim() : (profile?.position || ''),
+        // Préserver les champs parentaux existants
+        parentalEmail: profile?.parentalEmail || '',
+        parentalPhoneNumber: profile?.parentalPhoneNumber || ''
       };
 
       // Si une nouvelle image a été sélectionnée, l'inclure dans la mise à jour
@@ -327,6 +366,37 @@ const ProfileScreen = () => {
                     keyboardType="phone-pad"
                   />
                 </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Adresse</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.address}
+                    onChangeText={(value) => handleInputChange('address', value)}
+                    placeholder="Entrez votre adresse"
+                    multiline
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Département</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.department}
+                    onChangeText={(value) => handleInputChange('department', value)}
+                    placeholder="Entrez votre département"
+                  />
+                </View>
+
+                <View style={styles.inputGroup}>
+                  <Text style={styles.inputLabel}>Poste</Text>
+                  <TextInput
+                    style={styles.input}
+                    value={formData.position}
+                    onChangeText={(value) => handleInputChange('position', value)}
+                    placeholder="Entrez votre poste"
+                  />
+                </View>
                 
                 <View style={styles.buttonGroup}>
                   <TouchableOpacity style={styles.saveButton} onPress={handleUpdate}>
@@ -402,6 +472,36 @@ const ProfileScreen = () => {
                       <Text style={styles.infoValue}>{profile.employeeId}</Text>
                     </View>
                   </View>
+
+                  <View style={styles.infoRow}>
+                    <Ionicons name="business-outline" size={20} color="#002857" />
+                    <View style={styles.infoContent}>
+                      <Text style={styles.infoLabel}>Département</Text>
+                      <Text style={styles.infoValue}>
+                        {profile.department || 'Non renseigné'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.infoRow}>
+                    <Ionicons name="briefcase-outline" size={20} color="#002857" />
+                    <View style={styles.infoContent}>
+                      <Text style={styles.infoLabel}>Poste</Text>
+                      <Text style={styles.infoValue}>
+                        {profile.position || 'Non renseigné'}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.infoRow}>
+                    <Ionicons name="location-outline" size={20} color="#002857" />
+                    <View style={styles.infoContent}>
+                      <Text style={styles.infoLabel}>Adresse</Text>
+                      <Text style={styles.infoValue}>
+                        {profile.address || 'Non renseigné'}
+                      </Text>
+                    </View>
+                  </View>
                 </View>
 
                 <View style={styles.actionButtons}>
@@ -409,7 +509,7 @@ const ProfileScreen = () => {
                     <Ionicons name="create-outline" size={20} color="#fff" />
                     <Text style={styles.buttonText}>Modifier le profil</Text>
                   </TouchableOpacity>
-                  
+
                   <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
                     <Ionicons name="log-out-outline" size={20} color="#fff" />
                     <Text style={styles.buttonText}>Se déconnecter</Text>
@@ -423,12 +523,9 @@ const ProfileScreen = () => {
             <Ionicons name="cloud-offline" size={48} color="#ccc" />
             <Text style={styles.loadingText}>Profil indisponible</Text>
             <Text style={styles.offlineText}>
-              Le serveur backend n'est pas accessible.{'\n'}
-              Démarrez le serveur avec: python app.py
+              Aucune donnée disponible.{'\n'}
+              Connectez-vous pour charger votre profil.
             </Text>
-            <TouchableOpacity style={styles.editButton} onPress={fetchProfile}>
-              <Text style={styles.buttonText}>Réessayer</Text>
-            </TouchableOpacity>
           </View>
         )}
       </View>

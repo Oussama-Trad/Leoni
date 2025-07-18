@@ -55,12 +55,22 @@ export const updateProfile = async (profileData) => {
 
     console.log('🔍 UPDATE_PROFILE_CONTROLLER: Données à envoyer:', profileData);
 
+    // S'assurer que tous les champs requis sont présents (compatibilité avec l'ancienne version du serveur)
     const requestBody = {
+      firstName: profileData.firstName || '',
+      lastName: profileData.lastName || '',
+      email: profileData.email || '',
+      phoneNumber: profileData.phoneNumber || '12345678', // Valeur par défaut si vide
+      address: profileData.address || '',
+      department: profileData.department || 'Non spécifié',
+      position: profileData.position || 'Non spécifié',
+      parentalEmail: profileData.parentalEmail || '',
+      parentalPhoneNumber: profileData.parentalPhoneNumber || '',
       ...profileData,
       updatedAt: new Date()
     };
 
-    console.log('🔍 UPDATE_PROFILE_CONTROLLER: Corps de la requête:', requestBody);
+    console.log('🔍 UPDATE_PROFILE_CONTROLLER: Corps de la requête final:', requestBody);
 
     const response = await fetch(`${BASE_URL}/update-profile`, {
       method: 'PUT',

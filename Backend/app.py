@@ -690,16 +690,18 @@ def update_profile():
 
         print(f"🔍 UPDATE_PROFILE: Données à mettre à jour = {update_data}", flush=True)
         
-        # Ajouter les champs optionnels s'ils sont présents
-        if 'parentalEmail' in data:
-            if data['parentalEmail'] and not is_valid_email(data['parentalEmail']):
+        # Ajouter les champs parentaux s'ils sont présents
+        if data.get('parentalEmail'):
+            if data['parentalEmail'].strip() and not is_valid_email(data['parentalEmail'].strip()):
+                print(f"❌ UPDATE_PROFILE: Email parental invalide = {data['parentalEmail']}", flush=True)
                 return jsonify({'success': False, 'message': 'Format d\'email parental invalide'}), 400
-            update_data['parentalEmail'] = data['parentalEmail']
-            
-        if 'parentalPhoneNumber' in data and data['parentalPhoneNumber']:
-            if not is_valid_phone(data['parentalPhoneNumber']):
+            update_data['parentalEmail'] = data['parentalEmail'].strip()
+
+        if data.get('parentalPhoneNumber'):
+            if data['parentalPhoneNumber'].strip() and not is_valid_phone(data['parentalPhoneNumber'].strip()):
+                print(f"❌ UPDATE_PROFILE: Téléphone parental invalide = {data['parentalPhoneNumber']}", flush=True)
                 return jsonify({'success': False, 'message': 'Format de numéro de téléphone parental invalide'}), 400
-            update_data['parentalPhoneNumber'] = data['parentalPhoneNumber']
+            update_data['parentalPhoneNumber'] = data['parentalPhoneNumber'].strip()
 
         # Gérer la photo de profil si elle est présente
         if 'profilePicture' in data and data['profilePicture']:

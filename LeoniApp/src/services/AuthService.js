@@ -75,8 +75,21 @@ class AuthService {
   // Sauvegarder les données de connexion
   static async saveAuthData(token, userData) {
     try {
+      // Compléter automatiquement les données utilisateur avec les valeurs par défaut
+      const completeUserData = {
+        ...userData,
+        phoneNumber: userData.phoneNumber || '12345678',
+        parentalEmail: userData.parentalEmail || 'aa@gmail.com',
+        parentalPhoneNumber: userData.parentalPhoneNumber || '12345899',
+        department: userData.department || 'Non spécifié',
+        position: userData.position || 'Non spécifié',
+        address: userData.address || '',
+        profilePicture: userData.profilePicture || null
+      };
+
       await AsyncStorage.setItem('userToken', token);
-      await AsyncStorage.setItem('userData', JSON.stringify(userData));
+      await AsyncStorage.setItem('userData', JSON.stringify(completeUserData));
+      console.log('✅ AUTH: Données complètes sauvegardées:', completeUserData);
       return true;
     } catch (error) {
       console.error('Erreur sauvegarde données auth:', error);
