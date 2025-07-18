@@ -1,13 +1,13 @@
 import React, { useState, useEffect, useContext } from 'react';
-import { 
-  View, 
-  Text, 
-  TextInput, 
-  TouchableOpacity, 
-  StyleSheet, 
-  Alert, 
-  ActivityIndicator, 
-  Image, 
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  Alert,
+  ActivityIndicator,
+  Image,
   ScrollView,
   Platform
 } from 'react-native';
@@ -16,6 +16,8 @@ import { getProfile, updateProfile, logout } from '../controllers/ProfileControl
 import { AuthContext } from '../contexts/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import ConnectionStatus from '../components/ConnectionStatus';
 
 const ProfileScreen = () => {
   const navigation = useNavigation();
@@ -42,7 +44,10 @@ const ProfileScreen = () => {
   const fetchProfile = async () => {
     setLoading(true);
     try {
+      console.log('🔍 PROFILE: Chargement du profil...');
       const response = await getProfile();
+      console.log('🔍 PROFILE: Réponse reçue:', response);
+
       if (response && response.user) {
         setProfile(response.user);
         setProfileImage(response.user.profilePicture || null);
@@ -55,12 +60,50 @@ const ProfileScreen = () => {
           department: response.user.department || '',
           position: response.user.position || ''
         });
+        console.log('✅ PROFILE: Profil chargé avec succès');
+      } else {
+        console.error('❌ PROFILE: Réponse invalide:', response);
+        await loadLocalProfile();
       }
     } catch (error) {
-      console.error('Erreur lors du chargement du profil:', error);
-      Alert.alert('Erreur', 'Impossible de charger le profil. Vérifiez votre connexion.');
+      console.error('❌ PROFILE: Erreur lors du chargement du profil:', error);
+      // Essayer de charger les données locales en cas d'erreur serveur
+      await loadLocalProfile();
+      Alert.alert(
+        'Mode hors ligne',
+        'Impossible de se connecter au serveur. Affichage des données locales.',
+        [{ text: 'OK' }]
+      );
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadLocalProfile = async () => {
+    try {
+      console.log('🔍 PROFILE: Chargement des données locales...');
+      const userData = await AsyncStorage.getItem('userData');
+      if (userData) {
+        const user = JSON.parse(userData);
+        console.log('🔍 PROFILE: Données locales trouvées:', user);
+        setProfile(user);
+        setFormData({
+          firstName: user.firstName || '',
+          lastName: user.lastName || '',
+          email: user.email || '',
+          phone: user.phoneNumber || '',
+          address: user.address || '',
+          department: user.department || '',
+          position: user.position || ''
+        });
+        console.log('✅ PROFILE: Données locales chargées');
+      } else {
+        console.log('❌ PROFILE: Aucune donnée locale trouvée');
+        setProfile(null);
+      }
+    } catch (error) {
+      console.error('❌ PROFILE: Erreur chargement données locales:', error);
+      setProfile(null);
     }
   };
 
@@ -68,23 +111,50 @@ const ProfileScreen = () => {
     setFormData(prev => ({ ...prev, [field]: value }));
   };
 
+  const validateEmail = (email) => {
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    return emailRegex.test(email);
+  };
+
   const handleUpdate = async () => {
     try {
+      // Validation côté client
+      if (!formData.firstName.trim()) {
+        Alert.alert('Erreur', 'Le prénom est requis');
+        return;
+      }
+      if (!formData.lastName.trim()) {
+        Alert.alert('Erreur', 'Le nom est requis');
+        return;
+      }
+      if (!formData.email.trim()) {
+        Alert.alert('Erreur', 'L\'email est requis');
+        return;
+      }
+      if (!validateEmail(formData.email.trim())) {
+        Alert.alert('Erreur', 'Format d\'email invalide');
+        return;
+      }
+
+      console.log('🔍 PROFILE_SCREEN: Données du formulaire:', formData);
+
       // Préparer les données à mettre à jour, incluant la photo de profil si elle a changé
       const updateData = {
-        firstName: formData.firstName,
-        lastName: formData.lastName,
-        email: formData.email,
-        phoneNumber: formData.phone, // Convertir phone en phoneNumber pour le backend
-        address: formData.address,
-        department: formData.department,
-        position: formData.position
+        firstName: formData.firstName.trim(),
+        lastName: formData.lastName.trim(),
+        email: formData.email.trim(),
+        phoneNumber: formData.phone ? formData.phone.trim() : '', // Convertir phone en phoneNumber pour le backend
+        address: formData.address ? formData.address.trim() : '',
+        department: formData.department ? formData.department.trim() : '',
+        position: formData.position ? formData.position.trim() : ''
       };
 
       // Si une nouvelle image a été sélectionnée, l'inclure dans la mise à jour
       if (tempProfileImage && tempProfileImage !== profileImage) {
         updateData.profilePicture = tempProfileImage;
       }
+
+      console.log('🔍 PROFILE_SCREEN: Données à envoyer:', updateData);
 
       await updateProfile(updateData);
 
@@ -98,8 +168,8 @@ const ProfileScreen = () => {
       fetchProfile();
       Alert.alert('Succès', 'Profil mis à jour avec succès');
     } catch (error) {
-      console.error('Erreur mise à jour profil:', error);
-      Alert.alert('Erreur', 'Impossible de mettre à jour le profil');
+      console.error('❌ PROFILE_SCREEN: Erreur mise à jour profil:', error);
+      Alert.alert('Erreur', error.message || 'Impossible de mettre à jour le profil');
     }
   };
 
@@ -167,6 +237,9 @@ const ProfileScreen = () => {
 
   return (
     <ScrollView style={styles.container}>
+      {/* Indicateur de statut de connexion */}
+      <ConnectionStatus />
+
       {/* Header avec gradient */}
       <View style={styles.header}>
         <View style={styles.profileImageContainer}>
@@ -206,7 +279,7 @@ const ProfileScreen = () => {
             <ActivityIndicator size="large" color="#002857" />
             <Text style={styles.loadingText}>Chargement du profil...</Text>
           </View>
-        ) : (
+        ) : profile ? (
           <>
             {editMode ? (
               <View style={styles.editForm}>
@@ -345,6 +418,18 @@ const ProfileScreen = () => {
               </View>
             )}
           </>
+        ) : (
+          <View style={styles.loadingContainer}>
+            <Ionicons name="cloud-offline" size={48} color="#ccc" />
+            <Text style={styles.loadingText}>Profil indisponible</Text>
+            <Text style={styles.offlineText}>
+              Le serveur backend n'est pas accessible.{'\n'}
+              Démarrez le serveur avec: python app.py
+            </Text>
+            <TouchableOpacity style={styles.editButton} onPress={fetchProfile}>
+              <Text style={styles.buttonText}>Réessayer</Text>
+            </TouchableOpacity>
+          </View>
         )}
       </View>
     </ScrollView>
@@ -433,6 +518,13 @@ const styles = StyleSheet.create({
     marginTop: 10,
     fontSize: 16,
     color: '#666',
+  },
+  offlineText: {
+    marginTop: 10,
+    fontSize: 14,
+    color: '#999',
+    textAlign: 'center',
+    lineHeight: 20,
   },
   sectionTitle: {
     fontSize: 20,

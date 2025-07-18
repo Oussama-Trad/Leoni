@@ -8,25 +8,40 @@ export const getProfile = async () => {
       throw new Error('Token non trouvé');
     }
 
+    console.log('🔍 PROFILE_CONTROLLER: Appel API /me...');
+    console.log('🔍 PROFILE_CONTROLLER: URL =', `${BASE_URL}/me`);
+
     const response = await fetch(`${BASE_URL}/me`, {
       method: 'GET',
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
+      timeout: 10000
     });
 
+    console.log('🔍 PROFILE_CONTROLLER: Réponse reçue, status =', response.status);
+
     if (!response.ok) {
+      if (response.status === 500) {
+        throw new Error('Serveur indisponible. Vérifiez que le backend est démarré.');
+      }
       throw new Error(`HTTP error! status: ${response.status}`);
     }
 
     const data = await response.json();
+    console.log('🔍 PROFILE_CONTROLLER: Données reçues:', data);
+
     if (data.success) {
       return data;
     } else {
       throw new Error(data.message || 'Erreur lors de la récupération du profil');
     }
   } catch (error) {
+    console.error('❌ PROFILE_CONTROLLER: Erreur:', error);
+    if (error.message.includes('fetch')) {
+      throw new Error('Impossible de se connecter au serveur. Vérifiez que le backend est démarré.');
+    }
     throw new Error(error.message || 'Failed to fetch profile');
   }
 };
@@ -38,33 +53,47 @@ export const updateProfile = async (profileData) => {
       throw new Error('Token non trouvé');
     }
 
+    console.log('🔍 UPDATE_PROFILE_CONTROLLER: Données à envoyer:', profileData);
+
+    const requestBody = {
+      ...profileData,
+      updatedAt: new Date()
+    };
+
+    console.log('🔍 UPDATE_PROFILE_CONTROLLER: Corps de la requête:', requestBody);
+
     const response = await fetch(`${BASE_URL}/update-profile`, {
       method: 'PUT',
       headers: {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        ...profileData,
-        updatedAt: new Date()
-      })
+      body: JSON.stringify(requestBody)
     });
 
+    console.log('🔍 UPDATE_PROFILE_CONTROLLER: Réponse status:', response.status);
+
     if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`);
+      const errorData = await response.json();
+      console.error('❌ UPDATE_PROFILE_CONTROLLER: Erreur serveur:', errorData);
+      throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
     }
 
     const data = await response.json();
+    console.log('🔍 UPDATE_PROFILE_CONTROLLER: Réponse reçue:', data);
+
     if (data.success) {
       // Mettre à jour les données utilisateur locales si elles incluent une photo de profil
       if (data.user) {
         await AsyncStorage.setItem('userData', JSON.stringify(data.user));
+        console.log('✅ UPDATE_PROFILE_CONTROLLER: Données locales mises à jour');
       }
       return data;
     } else {
       throw new Error(data.message || 'Erreur lors de la mise à jour du profil');
     }
   } catch (error) {
+    console.error('❌ UPDATE_PROFILE_CONTROLLER: Erreur:', error);
     throw new Error(error.message || 'Failed to update profile');
   }
 };

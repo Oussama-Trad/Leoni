@@ -35,11 +35,18 @@ class AuthService {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json',
         },
+        timeout: 5000
       });
-      
+
       return response.ok;
     } catch (error) {
       console.error('Erreur validation token:', error);
+      // En cas d'erreur réseau, considérer le token comme valide localement
+      // pour permettre l'utilisation hors ligne
+      if (error.message.includes('fetch') || error.message.includes('Network')) {
+        console.log('Mode hors ligne détecté, token considéré comme valide');
+        return true;
+      }
       return false;
     }
   }

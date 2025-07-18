@@ -523,39 +523,53 @@ def get_current_user():
         response.headers.add('Access-Control-Allow-Methods', '*')
         return response
 
+    print("🔍 GET_ME: Requête reçue", flush=True)
     try:
         # Vérifier le token
         auth_header = request.headers.get('Authorization')
         if not auth_header or not auth_header.startswith('Bearer '):
+            print("❌ GET_ME: Token manquant", flush=True)
             return jsonify({'success': False, 'message': 'Token manquant ou invalide'}), 401
 
         token = auth_header.split(' ')[1]
         payload = verify_token(token)
 
         if not payload:
+            print("❌ GET_ME: Token invalide", flush=True)
             return jsonify({'success': False, 'message': 'Token invalide ou expiré'}), 401
+
+        print(f"🔍 GET_ME: Token décodé = {payload}", flush=True)
+
+        # Utiliser _id du payload (pas userId)
+        user_id = payload.get('userId') or payload.get('_id')
+        print(f"🔍 GET_ME: Recherche user avec ID = {user_id}", flush=True)
 
         # Récupérer l'utilisateur depuis la base de données
         user = users_collection.find_one({
-            '_id': ObjectId(payload['userId'])
+            '_id': ObjectId(user_id)
         }, {'password': 0})  # Exclure le mot de passe
 
         if not user:
+            print("❌ GET_ME: Utilisateur non trouvé", flush=True)
             return jsonify({'success': False, 'message': 'Utilisateur non trouvé'}), 404
 
         # Convertir l'ObjectId en string pour le JSON
         user['_id'] = str(user['_id'])
         user['id'] = str(user['_id'])  # Ajouter aussi 'id' pour compatibilité
 
+        print("✅ GET_ME: Succès", flush=True)
         return jsonify({
             'success': True,
             'user': user
         })
 
     except jwt.ExpiredSignatureError:
+        print("❌ GET_ME: Token expiré", flush=True)
         return jsonify({'success': False, 'message': 'Session expirée'}), 401
     except Exception as e:
-        print(f"Erreur get_current_user: {str(e)}")
+        print(f"❌ GET_ME: Exception = {str(e)}", flush=True)
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'message': 'Erreur serveur'}), 500
 
 # Route pour récupérer les informations du profil utilisateur par ID
@@ -605,59 +619,76 @@ def update_profile():
         response.headers.add('Access-Control-Allow-Methods', '*')
         return response
 
+    print("🔍 UPDATE_PROFILE: Requête reçue", flush=True)
     try:
         # Vérifier le token
         auth_header = request.headers.get('Authorization')
         if not auth_header or not auth_header.startswith('Bearer '):
+            print("❌ UPDATE_PROFILE: Token manquant", flush=True)
             return jsonify({'success': False, 'message': 'Token manquant ou invalide'}), 401
-            
+
         token = auth_header.split(' ')[1]
         payload = verify_token(token)
-        
+
         if not payload:
+            print("❌ UPDATE_PROFILE: Token invalide", flush=True)
             return jsonify({'success': False, 'message': 'Token invalide ou expiré'}), 401
-        
+
         data = request.get_json()
-        
-        # Validation des données
-        required_fields = ['firstName', 'lastName', 'email', 'phoneNumber']
+        print(f"🔍 UPDATE_PROFILE: Données reçues = {data}", flush=True)
+
+        # Validation des données - seulement les champs essentiels
+        required_fields = ['firstName', 'lastName', 'email']
         for field in required_fields:
-            if not data.get(field):
+            if not data.get(field) or not data.get(field).strip():
+                print(f"❌ UPDATE_PROFILE: Champ manquant = {field}", flush=True)
                 return jsonify({'success': False, 'message': f'Le champ {field} est requis'}), 400
         
         # Validation de l'email
         if not is_valid_email(data['email']):
+            print(f"❌ UPDATE_PROFILE: Email invalide = {data['email']}", flush=True)
             return jsonify({'success': False, 'message': 'Format d\'email invalide'}), 400
-            
+
+        # Utiliser _id du payload
+        user_id = payload.get('userId') or payload.get('_id')
+        print(f"🔍 UPDATE_PROFILE: User ID = {user_id}", flush=True)
+
         # Vérifier si l'email existe déjà pour un autre utilisateur
         existing_user = users_collection.find_one({
             'email': data['email'],
-            '_id': {'$ne': ObjectId(payload['_id'])}
+            '_id': {'$ne': ObjectId(user_id)}
         })
-        
+
         if existing_user:
+            print(f"❌ UPDATE_PROFILE: Email déjà utilisé = {data['email']}", flush=True)
             return jsonify({'success': False, 'message': 'Cet email est déjà utilisé'}), 400
-        
-        # Validation du numéro de téléphone
-        if not is_valid_phone(data['phoneNumber']):
+
+        # Validation du numéro de téléphone (optionnel)
+        if data.get('phoneNumber') and not is_valid_phone(data['phoneNumber']):
+            print(f"❌ UPDATE_PROFILE: Téléphone invalide = {data['phoneNumber']}", flush=True)
             return jsonify({'success': False, 'message': 'Format de numéro de téléphone invalide'}), 400
         
         # Mise à jour des informations de l'utilisateur
         update_data = {
-            'firstName': data['firstName'],
-            'lastName': data['lastName'],
-            'email': data['email'],
-            'phoneNumber': data['phoneNumber'],
+            'firstName': data['firstName'].strip(),
+            'lastName': data['lastName'].strip(),
+            'email': data['email'].strip().lower(),
             'updatedAt': datetime.utcnow()
         }
 
+        # Ajouter le téléphone s'il est fourni
+        if data.get('phoneNumber') and data['phoneNumber'].strip():
+            update_data['phoneNumber'] = data['phoneNumber'].strip()
+
         # Ajouter les champs optionnels s'ils sont présents
-        if 'address' in data:
-            update_data['address'] = data['address']
-        if 'department' in data:
-            update_data['department'] = data['department']
-        if 'position' in data:
-            update_data['position'] = data['position']
+        if data.get('address') and data['address'].strip():
+            update_data['address'] = data['address'].strip()
+        if data.get('department') and data['department'].strip():
+            update_data['department'] = data['department'].strip()
+        if data.get('position') and data['position'].strip():
+            update_data['position'] = data['position'].strip()
+
+        print(f"🔍 UPDATE_PROFILE: Données à mettre à jour = {update_data}", flush=True)
         
         # Ajouter les champs optionnels s'ils sont présents
         if 'parentalEmail' in data:
@@ -680,22 +711,27 @@ def update_profile():
 
         # Mettre à jour l'utilisateur dans la base de données
         result = users_collection.update_one(
-            {'_id': ObjectId(payload['_id'])},
+            {'_id': ObjectId(user_id)},
             {'$set': update_data}
         )
-        
+
         if result.matched_count == 0:
+            print(f"❌ UPDATE_PROFILE: Utilisateur non trouvé = {user_id}", flush=True)
             return jsonify({'success': False, 'message': 'Utilisateur non trouvé'}), 404
-        
+
+        print(f"✅ UPDATE_PROFILE: Mise à jour réussie pour {user_id}", flush=True)
+
         # Récupérer les données mises à jour
         updated_user = users_collection.find_one(
-            {'_id': ObjectId(payload['_id'])},
+            {'_id': ObjectId(user_id)},
             {'password': 0}  # Exclure le mot de passe
         )
-        
+
         if updated_user:
             updated_user['_id'] = str(updated_user['_id'])
-            
+            updated_user['id'] = str(updated_user['_id'])  # Ajouter aussi 'id' pour compatibilité
+
+        print("✅ UPDATE_PROFILE: Succès complet", flush=True)
         return jsonify({
             'success': True,
             'message': 'Profil mis à jour avec succès',
@@ -791,9 +827,12 @@ def upload_profile_picture():
         if not image_data.startswith('data:image/'):
             return jsonify({'success': False, 'message': 'Format d\'image invalide'}), 400
 
+        # Utiliser _id du payload
+        user_id = payload.get('userId') or payload.get('_id')
+
         # Mettre à jour la photo de profil dans la base de données
         result = users_collection.update_one(
-            {'_id': ObjectId(payload['userId'])},
+            {'_id': ObjectId(user_id)},
             {'$set': {
                 'profilePicture': image_data,
                 'updatedAt': datetime.utcnow()
