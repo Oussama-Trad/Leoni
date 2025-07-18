@@ -12,7 +12,7 @@ import {
   Platform
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
-import { getProfile, updateProfile, logout, uploadProfilePicture } from '../controllers/ProfileController';
+import { getProfile, updateProfile, logout } from '../controllers/ProfileController';
 import { AuthContext } from '../contexts/AuthContext';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
@@ -24,6 +24,7 @@ const ProfileScreen = () => {
   const [profile, setProfile] = useState(null);
   const [editMode, setEditMode] = useState(false);
   const [profileImage, setProfileImage] = useState(null);
+  const [tempProfileImage, setTempProfileImage] = useState(null); // Image temporaire en mode édition
   const [formData, setFormData] = useState({
     firstName: '',
     lastName: '',
@@ -69,8 +70,31 @@ const ProfileScreen = () => {
 
   const handleUpdate = async () => {
     try {
-      await updateProfile(formData);
+      // Préparer les données à mettre à jour, incluant la photo de profil si elle a changé
+      const updateData = {
+        firstName: formData.firstName,
+        lastName: formData.lastName,
+        email: formData.email,
+        phoneNumber: formData.phone, // Convertir phone en phoneNumber pour le backend
+        address: formData.address,
+        department: formData.department,
+        position: formData.position
+      };
+
+      // Si une nouvelle image a été sélectionnée, l'inclure dans la mise à jour
+      if (tempProfileImage && tempProfileImage !== profileImage) {
+        updateData.profilePicture = tempProfileImage;
+      }
+
+      await updateProfile(updateData);
+
+      // Mettre à jour l'image de profil locale si elle a changé
+      if (tempProfileImage && tempProfileImage !== profileImage) {
+        setProfileImage(tempProfileImage);
+      }
+
       setEditMode(false);
+      setTempProfileImage(null); // Réinitialiser l'image temporaire
       fetchProfile();
       Alert.alert('Succès', 'Profil mis à jour avec succès');
     } catch (error) {
@@ -95,6 +119,12 @@ const ProfileScreen = () => {
 
   // Fonction pour sélectionner une image
   const pickImage = async () => {
+    // Ne permettre la sélection d'image qu'en mode édition
+    if (!editMode) {
+      Alert.alert('Information', 'Veuillez d\'abord appuyer sur "Modifier mes informations" pour changer votre photo de profil.');
+      return;
+    }
+
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== 'granted') {
@@ -111,26 +141,22 @@ const ProfileScreen = () => {
 
       if (!result.canceled) {
         const imageUri = result.assets[0].uri;
-        setProfileImage(imageUri);
 
+        // Convertir l'image en base64 pour la stocker temporairement
         try {
-          // Uploader l'image vers le serveur
-          await uploadProfilePicture(imageUri);
+          const response = await fetch(imageUri);
+          const blob = await response.blob();
 
-          // Mettre à jour le profil local
-          if (profile) {
-            setProfile(prev => ({
-              ...prev,
-              profilePicture: imageUri
-            }));
-          }
-
-          Alert.alert('Succès', 'Photo de profil mise à jour avec succès');
+          const reader = new FileReader();
+          reader.onloadend = () => {
+            const base64data = reader.result;
+            setTempProfileImage(base64data);
+            Alert.alert('Information', 'Photo sélectionnée. Appuyez sur "Sauvegarder" pour confirmer les modifications.');
+          };
+          reader.readAsDataURL(blob);
         } catch (error) {
-          console.error('Erreur upload image:', error);
-          Alert.alert('Erreur', 'Impossible de sauvegarder la photo de profil');
-          // Remettre l'ancienne image en cas d'erreur
-          setProfileImage(profile?.profilePicture || null);
+          console.error('Erreur conversion image:', error);
+          Alert.alert('Erreur', 'Impossible de traiter l\'image sélectionnée');
         }
       }
     } catch (error) {
@@ -145,9 +171,9 @@ const ProfileScreen = () => {
       <View style={styles.header}>
         <View style={styles.profileImageContainer}>
           <TouchableOpacity onPress={pickImage} style={styles.imageWrapper}>
-            {profileImage || profile?.profilePicture ? (
-              <Image 
-                source={{ uri: profileImage || profile.profilePicture }} 
+            {(editMode && tempProfileImage) || profileImage || profile?.profilePicture ? (
+              <Image
+                source={{ uri: (editMode && tempProfileImage) || profileImage || profile.profilePicture }}
                 style={styles.profileImage}
               />
             ) : (
@@ -177,7 +203,7 @@ const ProfileScreen = () => {
       <View style={styles.content}>
         {loading ? (
           <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#007bff" />
+            <ActivityIndicator size="large" color="#002857" />
             <Text style={styles.loadingText}>Chargement du profil...</Text>
           </View>
         ) : (
@@ -234,7 +260,10 @@ const ProfileScreen = () => {
                     <Ionicons name="checkmark" size={20} color="#fff" />
                     <Text style={styles.buttonText}>Sauvegarder</Text>
                   </TouchableOpacity>
-                  <TouchableOpacity style={styles.cancelButton} onPress={() => setEditMode(false)}>
+                  <TouchableOpacity style={styles.cancelButton} onPress={() => {
+                    setEditMode(false);
+                    setTempProfileImage(null); // Réinitialiser l'image temporaire
+                  }}>
                     <Ionicons name="close" size={20} color="#666" />
                     <Text style={styles.cancelButtonText}>Annuler</Text>
                   </TouchableOpacity>
@@ -246,7 +275,7 @@ const ProfileScreen = () => {
                 
                 <View style={styles.infoCard}>
                   <View style={styles.infoRow}>
-                    <Ionicons name="person-outline" size={20} color="#007bff" />
+                    <Ionicons name="person-outline" size={20} color="#002857" />
                     <View style={styles.infoContent}>
                       <Text style={styles.infoLabel}>Nom complet</Text>
                       <Text style={styles.infoValue}>
@@ -256,7 +285,7 @@ const ProfileScreen = () => {
                   </View>
 
                   <View style={styles.infoRow}>
-                    <Ionicons name="mail-outline" size={20} color="#007bff" />
+                    <Ionicons name="mail-outline" size={20} color="#002857" />
                     <View style={styles.infoContent}>
                       <Text style={styles.infoLabel}>Email personnel</Text>
                       <Text style={styles.infoValue}>{profile.email}</Text>
@@ -264,7 +293,7 @@ const ProfileScreen = () => {
                   </View>
 
                   <View style={styles.infoRow}>
-                    <Ionicons name="call-outline" size={20} color="#007bff" />
+                    <Ionicons name="call-outline" size={20} color="#002857" />
                     <View style={styles.infoContent}>
                       <Text style={styles.infoLabel}>Téléphone</Text>
                       <Text style={styles.infoValue}>
@@ -274,7 +303,7 @@ const ProfileScreen = () => {
                   </View>
 
                   <View style={styles.infoRow}>
-                    <Ionicons name="mail-outline" size={20} color="#007bff" />
+                    <Ionicons name="mail-outline" size={20} color="#002857" />
                     <View style={styles.infoContent}>
                       <Text style={styles.infoLabel}>Email parental</Text>
                       <Text style={styles.infoValue}>
@@ -284,7 +313,7 @@ const ProfileScreen = () => {
                   </View>
 
                   <View style={styles.infoRow}>
-                    <Ionicons name="call-outline" size={20} color="#007bff" />
+                    <Ionicons name="call-outline" size={20} color="#002857" />
                     <View style={styles.infoContent}>
                       <Text style={styles.infoLabel}>Téléphone parental</Text>
                       <Text style={styles.infoValue}>
@@ -294,7 +323,7 @@ const ProfileScreen = () => {
                   </View>
 
                   <View style={styles.infoRow}>
-                    <Ionicons name="id-card-outline" size={20} color="#007bff" />
+                    <Ionicons name="id-card-outline" size={20} color="#002857" />
                     <View style={styles.infoContent}>
                       <Text style={styles.infoLabel}>ID employé</Text>
                       <Text style={styles.infoValue}>{profile.employeeId}</Text>
@@ -328,7 +357,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8f9fa',
   },
   header: {
-    backgroundColor: '#007bff',
+    backgroundColor: '#002857',
     paddingTop: Platform.OS === 'ios' ? 50 : 30,
     paddingBottom: 30,
     paddingHorizontal: 20,
@@ -517,7 +546,7 @@ const styles = StyleSheet.create({
     gap: 15,
   },
   editButton: {
-    backgroundColor: '#007bff',
+    backgroundColor: '#002857',
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',

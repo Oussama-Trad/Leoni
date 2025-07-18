@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { BASE_URL } from '../config';
 
 const DocumentRequestScreen = () => {
   const [documentType, setDocumentType] = useState('');
@@ -46,7 +47,7 @@ const DocumentRequestScreen = () => {
       const user = JSON.parse(userData);
       console.log('Chargement des demandes pour:', user.email);
 
-      const response = await fetch(`http://localhost:5000/document-requests`, {
+      const response = await fetch(`${BASE_URL}/document-requests`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -115,7 +116,7 @@ const DocumentRequestScreen = () => {
         description: description.trim()
       };
 
-      const response = await fetch('http://localhost:5000/document-request', {
+      const response = await fetch(`${BASE_URL}/document-request`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

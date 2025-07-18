@@ -72,7 +72,7 @@ export default function ForgotPasswordScreen({ navigation }) {
 
       <View style={styles.content}>
         <View style={styles.iconContainer}>
-          <Ionicons name="mail-outline" size={80} color="#007bff" />
+          <Ionicons name="mail-outline" size={80} color="#002857" />
         </View>
 
         <Text style={styles.subtitle}>
@@ -122,7 +122,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#f8f9fa',
   },
   header: {
-    backgroundColor: '#007bff',
+    backgroundColor: '#002857',
     paddingTop: 50,
     paddingBottom: 20,
     paddingHorizontal: 20,
@@ -176,7 +176,7 @@ const styles = StyleSheet.create({
     color: '#333',
   },
   button: {
-    backgroundColor: '#007bff',
+    backgroundColor: '#002857',
     borderRadius: 10,
     height: 50,
     justifyContent: 'center',
@@ -200,7 +200,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   backToLoginText: {
-    color: '#007bff',
+    color: '#002857',
     fontSize: 16,
     fontWeight: '500',
   },

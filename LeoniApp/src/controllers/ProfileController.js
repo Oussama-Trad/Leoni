@@ -56,6 +56,10 @@ export const updateProfile = async (profileData) => {
 
     const data = await response.json();
     if (data.success) {
+      // Mettre à jour les données utilisateur locales si elles incluent une photo de profil
+      if (data.user) {
+        await AsyncStorage.setItem('userData', JSON.stringify(data.user));
+      }
       return data;
     } else {
       throw new Error(data.message || 'Erreur lors de la mise à jour du profil');

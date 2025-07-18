@@ -15,20 +15,8 @@ import secrets
 import base64
 
 app = Flask(__name__)
-# Configuration CORS pour développement local
-CORS(app, resources={
-    r"/login": {
-        "origins": ["http://localhost:8085", "http://localhost:8086"],
-        "methods": ["POST", "OPTIONS"],
-        "allow_headers": ["Content-Type"],
-        "supports_credentials": True
-    },
-    r"/*": {
-        "origins": "*",
-        "methods": ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-        "allow_headers": ["*"]
-    }
-})
+# Configuration CORS pour développement local - Permettre toutes les origines pour le développement
+CORS(app, origins="*", methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"], allow_headers=["*"])
 
 # Middleware pour gérer les requêtes OPTIONS et éviter les doublons headers CORS
 @app.after_request
@@ -279,60 +267,69 @@ def register():
 def login():
     if request.method == 'OPTIONS':
         response = jsonify({'success': True})
-        response.headers.add('Access-Control-Allow-Origin', '*')
-        response.headers.add('Access-Control-Allow-Headers', '*')
-        response.headers.add('Access-Control-Allow-Methods', '*')
         return response
+
+    print("🔍 LOGIN: Requête reçue", flush=True)
+
     try:
         data = request.get_json()
-        
-        if not data or not all(field in data for field in ['email', 'password']):
+        print(f"🔍 LOGIN: Données = {data}", flush=True)
+
+        if not data:
+            print("❌ LOGIN: Pas de données JSON", flush=True)
+            return jsonify({'success': False, 'message': 'Données manquantes'}), 400
+
+        if 'email' not in data or 'password' not in data:
+            print("❌ LOGIN: Email ou password manquant", flush=True)
             return jsonify({'success': False, 'message': 'Email et mot de passe requis'}), 400
 
-        user = users_collection.find_one({'email': data['email'].lower().strip()})
+        email = data['email'].lower().strip()
+        password = data['password']
+
+        print(f"🔍 LOGIN: Recherche user {email}", flush=True)
+        user = users_collection.find_one({'email': email})
+
         if not user:
+            print("❌ LOGIN: User non trouvé", flush=True)
             return jsonify({'success': False, 'message': 'Email ou mot de passe incorrect'}), 401
 
-        if not bcrypt.checkpw(data['password'].encode('utf-8'), user['password']):
+        print("🔍 LOGIN: User trouvé, vérif password", flush=True)
+
+        if not bcrypt.checkpw(password.encode('utf-8'), user['password']):
+            print("❌ LOGIN: Password incorrect", flush=True)
             return jsonify({'success': False, 'message': 'Email ou mot de passe incorrect'}), 401
 
-        # Mettre à jour la date de dernière connexion
-        users_collection.update_one(
-            {'_id': user['_id']},
-            {'$set': {'lastLogin': datetime.utcnow()}}
-        )
+        print("🔍 LOGIN: Password OK, génération token", flush=True)
 
+        # Token JWT simple
         token = jwt.encode({
             '_id': str(user['_id']),
-            'userId': str(user['_id']),  # Keep for backwards compatibility
             'email': user['email'],
             'exp': datetime.utcnow() + timedelta(hours=24)
         }, JWT_SECRET_KEY, algorithm='HS256')
 
-        print(f"✅ Connexion réussie: {user['email']}")
+        print("✅ LOGIN: Succès", flush=True)
 
         return jsonify({
             'success': True,
             'message': 'Connexion réussie',
             'user': {
                 'id': str(user['_id']),
-                'firstName': user['firstName'],
-                'lastName': user['lastName'],
+                'firstName': user.get('firstName', ''),
+                'lastName': user.get('lastName', ''),
                 'email': user['email'],
-                'parentalEmail': user['parentalEmail'],
-                'phoneNumber': user['phoneNumber'],
-                'parentalPhoneNumber': user['parentalPhoneNumber'],
-                'employeeId': user['employeeId']
+                'employeeId': user.get('employeeId', '')
             },
             'token': token
-        }), 200
+        })
 
     except Exception as e:
-        print(f"❌ Erreur lors de la connexion: {e}")
+        print(f"❌ LOGIN: Exception = {str(e)}", flush=True)
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'success': False,
-            'message': 'Erreur serveur lors de la connexion',
-            'error': str(e)
+            'message': 'Erreur serveur'
         }), 500
 
 # Route pour soumettre une demande de document
@@ -394,15 +391,20 @@ def submit_document_request():
 # Route pour récupérer les demandes de documents
 @app.route('/document-requests', methods=['GET'])
 def get_document_requests():
+    print("🔍 GET_DOCUMENTS: Requête reçue", flush=True)
     try:
         auth_header = request.headers.get('Authorization')
         if not auth_header or not auth_header.startswith('Bearer '):
+            print("❌ GET_DOCUMENTS: Token manquant", flush=True)
             return jsonify({'success': False, 'message': 'Token manquant ou invalide'}), 401
 
         token = auth_header.split(" ")[1]
         decoded = verify_token(token)
         if not decoded:
+            print("❌ GET_DOCUMENTS: Token invalide", flush=True)
             return jsonify({'success': False, 'message': 'Token invalide ou expiré'}), 401
+
+        print(f"🔍 GET_DOCUMENTS: Token décodé = {decoded}", flush=True)
 
         # Migration des anciens documents avec status en string vers le nouveau format
         document_requests_collection.update_many(
@@ -456,7 +458,13 @@ def get_document_requests():
             }}]
         )
         
-        requests = list(document_requests_collection.find({'userId': decoded['userId']}))
+        # Utiliser _id du token décodé pour chercher les documents
+        user_id = decoded.get('userId') or decoded.get('_id')
+        print(f"🔍 GET_DOCUMENTS: Recherche documents pour user_id = {user_id}", flush=True)
+
+        requests = list(document_requests_collection.find({'userId': user_id}))
+        print(f"🔍 GET_DOCUMENTS: Trouvé {len(requests)} documents", flush=True)
+
         for req in requests:
             req['_id'] = str(req['_id'])
             req['userId'] = str(req['userId'])
@@ -465,13 +473,16 @@ def get_document_requests():
             if req.get('updatedAt'):
                 req['updatedAt'] = req['updatedAt'].isoformat()
 
+        print("✅ GET_DOCUMENTS: Succès", flush=True)
         return jsonify({
             'success': True,
             'requests': requests
         }), 200
 
     except Exception as e:
-        print(f"❌ Erreur lors de la récupération des demandes: {e}")
+        print(f"❌ GET_DOCUMENTS: Exception = {str(e)}", flush=True)
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'success': False,
             'message': 'Erreur serveur lors de la récupération',
@@ -621,7 +632,7 @@ def update_profile():
         # Vérifier si l'email existe déjà pour un autre utilisateur
         existing_user = users_collection.find_one({
             'email': data['email'],
-            'employeeId': {'$ne': payload['employeeId']}
+            '_id': {'$ne': ObjectId(payload['_id'])}
         })
         
         if existing_user:
@@ -639,6 +650,14 @@ def update_profile():
             'phoneNumber': data['phoneNumber'],
             'updatedAt': datetime.utcnow()
         }
+
+        # Ajouter les champs optionnels s'ils sont présents
+        if 'address' in data:
+            update_data['address'] = data['address']
+        if 'department' in data:
+            update_data['department'] = data['department']
+        if 'position' in data:
+            update_data['position'] = data['position']
         
         # Ajouter les champs optionnels s'ils sont présents
         if 'parentalEmail' in data:
@@ -650,10 +669,18 @@ def update_profile():
             if not is_valid_phone(data['parentalPhoneNumber']):
                 return jsonify({'success': False, 'message': 'Format de numéro de téléphone parental invalide'}), 400
             update_data['parentalPhoneNumber'] = data['parentalPhoneNumber']
-        
+
+        # Gérer la photo de profil si elle est présente
+        if 'profilePicture' in data and data['profilePicture']:
+            # Vérifier que c'est une image base64 valide
+            if not data['profilePicture'].startswith('data:image/'):
+                return jsonify({'success': False, 'message': 'Format d\'image invalide'}), 400
+            update_data['profilePicture'] = data['profilePicture']
+            print(f"✅ Photo de profil mise à jour pour: {payload.get('email', 'utilisateur')}")
+
         # Mettre à jour l'utilisateur dans la base de données
         result = users_collection.update_one(
-            {'employeeId': payload['employeeId']},
+            {'_id': ObjectId(payload['_id'])},
             {'$set': update_data}
         )
         
@@ -662,7 +689,7 @@ def update_profile():
         
         # Récupérer les données mises à jour
         updated_user = users_collection.find_one(
-            {'employeeId': payload['employeeId']},
+            {'_id': ObjectId(payload['_id'])},
             {'password': 0}  # Exclure le mot de passe
         )
         
@@ -845,7 +872,7 @@ def forgot_password():
             <p>Bonjour {user.get('firstName', '')},</p>
             <p>Vous avez demandé la réinitialisation de votre mot de passe pour votre compte Leoni App.</p>
             <p>Cliquez sur le lien ci-dessous pour réinitialiser votre mot de passe :</p>
-            <p><a href="{reset_link}" style="background-color: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Réinitialiser mon mot de passe</a></p>
+            <p><a href="{reset_link}" style="background-color: #002857; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Réinitialiser mon mot de passe</a></p>
             <p>Ce lien expire dans 1 heure.</p>
             <p>Si vous n'avez pas demandé cette réinitialisation, ignorez cet email.</p>
             <br>
@@ -938,7 +965,7 @@ if __name__ == '__main__':
     port = int(os.getenv('PORT', 5000))
     try:
         print(f"🚀 Serveur démarré sur le port {port}")
-        app.run(debug=True, host='0.0.0.0', port=port, threaded=True)
+        app.run(debug=False, host='0.0.0.0', port=port, threaded=True)
     except KeyboardInterrupt:
         print("\nArrêt du serveur...")
     except Exception as e:

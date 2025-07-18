@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import {
   StyleSheet,
   Text,
-  View, 
+  View,
   ScrollView,
   RefreshControl,
   ActivityIndicator,
@@ -11,8 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import Constants from 'expo-constants';
-const API_URL = Constants.expoConfig.extra.API_URL;
+import { BASE_URL } from '../config';
 
 const DocumentsScreen = () => {
   const [documents, setDocuments] = useState([]);
@@ -22,12 +21,17 @@ const DocumentsScreen = () => {
   const loadDocuments = async () => {
     try {
       setIsLoading(true);
+      console.log('🔍 FRONTEND: Chargement des documents...');
+
       const token = await AsyncStorage.getItem('userToken');
       if (!token) {
         throw new Error('Token non trouvé');
       }
-      
-      const response = await fetch(`${API_URL}/document-requests`, {
+
+      console.log('🔍 FRONTEND: Token trouvé, appel API...');
+      console.log('🔍 FRONTEND: URL =', `${BASE_URL}/document-requests`);
+
+      const response = await fetch(`${BASE_URL}/document-requests`, {
         headers: {
           'Authorization': `Bearer ${token}`,
           'Content-Type': 'application/json'
@@ -35,7 +39,11 @@ const DocumentsScreen = () => {
         timeout: 10000
       });
 
+      console.log('🔍 FRONTEND: Réponse reçue, status =', response.status);
+
       if (!response.ok) {
+        const errorText = await response.text();
+        console.error('🔍 FRONTEND: Erreur HTTP:', errorText);
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
@@ -47,20 +55,25 @@ const DocumentsScreen = () => {
       }
 
       const data = await response.json();
-      
+      console.log('🔍 FRONTEND: Données reçues:', data);
+
       if (data?.success && data?.requests) {
         setDocuments(data.requests);
+        console.log('✅ FRONTEND: Documents chargés:', data.requests.length);
       } else if (data?.success && Array.isArray(data)) {
         setDocuments(data);
+        console.log('✅ FRONTEND: Documents chargés (array):', data.length);
       } else {
         console.error('Invalid response structure:', data);
+        setDocuments([]);
       }
     } catch (error) {
-      console.error('Erreur fetch documents:', error);
+      console.error('❌ FRONTEND: Erreur fetch documents:', error);
+      setDocuments([]);
       Alert.alert(
         'Erreur',
-        error.message.includes('Network') 
-          ? 'Problème de connexion. Vérifiez votre internet.'
+        error.message.includes('Network')
+          ? 'Problème de connexion. Vérifiez que le serveur est démarré.'
           : 'Impossible de charger les documents.',
         [{ text: 'Réessayer', onPress: loadDocuments }]
       );
