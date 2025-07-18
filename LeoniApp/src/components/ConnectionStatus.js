@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { BASE_URL } from '../config';
+import NetworkService from '../services/NetworkService';
 
 const ConnectionStatus = () => {
   const [isOnline, setIsOnline] = useState(true);
@@ -10,9 +10,8 @@ const ConnectionStatus = () => {
   const checkConnection = async () => {
     setIsChecking(true);
     try {
-      const response = await fetch(`${BASE_URL}/health`, {
-        method: 'GET',
-        timeout: 3000
+      const response = await NetworkService.fetch('/health', {
+        method: 'GET'
       });
       setIsOnline(response.ok);
     } catch (error) {

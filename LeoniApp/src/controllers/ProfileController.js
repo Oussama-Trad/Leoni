@@ -9,7 +9,6 @@ export const getProfile = async () => {
     }
 
     console.log('🔍 PROFILE_CONTROLLER: Appel API /me...');
-    console.log('🔍 PROFILE_CONTROLLER: URL =', `${BASE_URL}/me`);
 
     const response = await NetworkService.fetch('/me', {
       method: 'GET',
@@ -131,7 +130,7 @@ export const uploadProfilePicture = async (imageUri) => {
         try {
           const base64data = reader.result;
 
-          const uploadResponse = await fetch(`${BASE_URL}/upload-profile-picture`, {
+          const uploadResponse = await NetworkService.fetch('/upload-profile-picture', {
             method: 'POST',
             headers: {
               'Authorization': `Bearer ${token}`,

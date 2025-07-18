@@ -1,39 +1,29 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import NetworkService from '../services/NetworkService';
 
 class AppController {
   constructor() {
-    // Remplacez par votre IP locale pour le développement
-    // Pour obtenir votre IP: ipconfig (Windows) ou ifconfig (Mac/Linux)
-    this.apiBaseUrl = 'http://192.168.1.100:5000'; // Remplacez par votre IP
-    // Alternative: this.apiBaseUrl = 'http://localhost:5000'; // Pour émulateur Android
+    // Plus besoin d'IP fixe - NetworkService détecte automatiquement
+    // this.apiBaseUrl est remplacé par NetworkService.fetch()
   }
 
   // Méthode pour tester la connexion au serveur
   async testConnection() {
     try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 secondes timeout
-      
-      const response = await fetch(`${this.apiBaseUrl}/health`, {
+      const response = await NetworkService.fetch('/health', {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
-        signal: controller.signal
+        headers: { 'Content-Type': 'application/json' }
       });
-      
-      clearTimeout(timeoutId);
-      
+
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
-      
+
       const result = await response.json();
       console.log('Test de connexion réussi:', result);
       return result;
     } catch (error) {
       console.error('Erreur de test de connexion:', error);
-      if (error.name === 'AbortError') {
-        return { success: false, message: 'Timeout - Impossible de se connecter au serveur' };
-      }
       return { success: false, message: 'Impossible de se connecter au serveur: ' + error.message };
     }
   }
@@ -47,24 +37,18 @@ class AppController {
       }
 
       console.log('Tentative de connexion avec:', { email: email.trim(), passwordLength: password.length });
-      
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 secondes timeout
 
-      const response = await fetch(`${this.apiBaseUrl}/login`, {
+      const response = await NetworkService.fetch('/login', {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
-        body: JSON.stringify({ 
-          email: email.trim().toLowerCase(), 
-          password: password 
-        }),
-        signal: controller.signal
+        body: JSON.stringify({
+          email: email.trim().toLowerCase(),
+          password: password
+        })
       });
-
-      clearTimeout(timeoutId);
 
       const result = await response.json();
       
@@ -122,20 +106,14 @@ class AppController {
         confirmPassword: '[MASQUÉ]'
       });
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-      const response = await fetch(`${this.apiBaseUrl}/register`, {
+      const response = await NetworkService.fetch('/register', {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
-        body: JSON.stringify(cleanedData),
-        signal: controller.signal
+        body: JSON.stringify(cleanedData)
       });
-
-      clearTimeout(timeoutId);
 
       const result = await response.json();
       

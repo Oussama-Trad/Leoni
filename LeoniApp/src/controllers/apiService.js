@@ -1,8 +1,8 @@
-import { BASE_URL } from '../config';
+import NetworkService from '../services/NetworkService';
 
 export const fetchFromAPI = async (endpoint, options = {}) => {
   try {
-    const response = await fetch(`${BASE_URL}${endpoint}`, {
+    const response = await NetworkService.fetch(endpoint, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
